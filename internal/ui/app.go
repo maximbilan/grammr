@@ -53,6 +53,10 @@ type Model struct {
 }
 
 // Messages
+type textPastedMsg struct {
+	text string
+}
+
 type correctionDoneMsg struct {
 	original  string
 	corrected string
@@ -159,7 +163,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m.handleGlobalMode(msg)
 
+	case textPastedMsg:
+		// Show pasted text immediately
+		m.originalText = msg.text
+		m.originalEditor.SetValue(msg.text)
+		m.correctedText = ""
+		m.correctedEditor.SetValue("")
+		m.isLoading = true
+		m.status = "[●] Correcting..."
+		// Start async correction
+		return m, m.streamCorrection(msg.text)
+
 	case startStreamingMsg:
+		// This is now handled by textPastedMsg, but keeping for compatibility
+		m.originalText = msg.text
+		m.originalEditor.SetValue(msg.text)
+		m.correctedText = ""
+		m.correctedEditor.SetValue("")
 		m.isLoading = true
 		m.status = "[●] Correcting..."
 		return m, m.streamCorrection(msg.text)
@@ -338,10 +358,11 @@ func (m Model) pasteAndCorrect() tea.Cmd {
 			return errMsg{err: fmt.Errorf("clipboard is empty")}
 		}
 
-		// Check cache
+		// Check cache first
 		if m.cache != nil {
 			hash := m.cache.Hash(text)
 			if cached := m.cache.Get(hash); cached != "" {
+				// Cache hit - return immediately with both original and corrected
 				return correctionDoneMsg{
 					original:  text,
 					corrected: cached,
@@ -349,8 +370,8 @@ func (m Model) pasteAndCorrect() tea.Cmd {
 			}
 		}
 
-		// Start streaming correction
-		return startStreamingMsg{text: text}
+		// No cache - show original immediately, then start correction
+		return textPastedMsg{text: text}
 	}
 }
 
@@ -450,12 +471,12 @@ func (m Model) View() string {
 		modeIndicator = "[Technical]"
 	}
 
-	loadingIndicator := ""
+	headerLoadingIndicator := ""
 	if m.isLoading {
-		loadingIndicator = "[●] Correcting..."
+		headerLoadingIndicator = "[●] Correcting..."
 	}
 
-	header := headerStyle.Render("grammr v1.0") + " " + modeIndicator + " " + loadingIndicator
+	header := headerStyle.Render("grammr v1.0") + " " + modeIndicator + " " + headerLoadingIndicator
 	status := statusStyle.Render(m.status)
 
 	if m.error != "" {
@@ -501,10 +522,18 @@ func (m Model) View() string {
 	s.WriteString("\n\n")
 
 	// Corrected text
-	correctedLabel := lipgloss.NewStyle().
+	correctedLabelStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("2")).
-		Render("Corrected Text")
+		Foreground(lipgloss.Color("2"))
+
+	loadingIndicator := ""
+	if m.isLoading {
+		loadingIndicator = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("11")).
+			Render(" [●] Correcting...")
+	}
+
+	correctedLabel := correctedLabelStyle.Render("Corrected Text") + loadingIndicator
 
 	s.WriteString(correctedLabel)
 	s.WriteString("\n")
@@ -527,7 +556,15 @@ func (m Model) View() string {
 			Height(boxHeight)
 
 		content := m.correctedText
-		if m.showDiff && m.originalText != "" && m.correctedText != "" {
+		
+		// Show loading indicator in the box if loading
+		if m.isLoading && content == "" {
+			loadingText := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11")).
+				Italic(true).
+				Render("Correcting...")
+			content = loadingText
+		} else if m.showDiff && m.originalText != "" && m.correctedText != "" {
 			content = renderDiff(m.originalText, m.correctedText)
 		}
 
