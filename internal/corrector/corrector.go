@@ -28,16 +28,16 @@ func New(apiKey, model, mode string) (*Corrector, error) {
 
 func (c *Corrector) buildPrompt(text string) string {
 	prompts := map[string]string{
-		"casual": `Fix grammar, spelling, and punctuation. Keep it casual and natural. 
+		"casual": `Fix grammar, spelling, and punctuation. Keep it casual and natural.
 Only output the corrected text, nothing else.`,
 
-		"formal": `Fix grammar, spelling, and punctuation. Make it more formal and professional. 
+		"formal": `Fix grammar, spelling, and punctuation. Make it more formal and professional.
 Only output the corrected text, nothing else.`,
 
-		"academic": `Fix grammar, spelling, and punctuation. Use academic writing style. 
+		"academic": `Fix grammar, spelling, and punctuation. Use academic writing style.
 Only output the corrected text, nothing else.`,
 
-		"technical": `Fix grammar, spelling, and punctuation. Maintain technical accuracy. 
+		"technical": `Fix grammar, spelling, and punctuation. Maintain technical accuracy.
 Only output the corrected text, nothing else.`,
 	}
 

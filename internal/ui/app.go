@@ -16,6 +16,11 @@ import (
 	"github.com/maximbilan/grammr/internal/corrector"
 )
 
+// trimTrailingWhitespace removes trailing whitespace from text
+func trimTrailingWhitespace(text string) string {
+	return strings.TrimRight(text, " \t\n\r")
+}
+
 type Mode int
 
 const (
@@ -164,35 +169,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleGlobalMode(msg)
 
 	case textPastedMsg:
-		// Show pasted text immediately
-		m.originalText = msg.text
-		m.originalEditor.SetValue(msg.text)
+		// Show pasted text immediately (trim trailing whitespace)
+		trimmedText := trimTrailingWhitespace(msg.text)
+		m.originalText = trimmedText
+		m.originalEditor.SetValue(trimmedText)
 		m.correctedText = ""
 		m.correctedEditor.SetValue("")
 		m.isLoading = true
 		m.status = "[●] Correcting..."
 		// Start async correction
-		return m, m.streamCorrection(msg.text)
+		return m, m.streamCorrection(trimmedText)
 
 	case startStreamingMsg:
 		// This is now handled by textPastedMsg, but keeping for compatibility
-		m.originalText = msg.text
-		m.originalEditor.SetValue(msg.text)
+		trimmedText := trimTrailingWhitespace(msg.text)
+		m.originalText = trimmedText
+		m.originalEditor.SetValue(trimmedText)
 		m.correctedText = ""
 		m.correctedEditor.SetValue("")
 		m.isLoading = true
 		m.status = "[●] Correcting..."
-		return m, m.streamCorrection(msg.text)
+		return m, m.streamCorrection(trimmedText)
 
 	case correctionDoneMsg:
-		m.originalText = msg.original
-		m.correctedText = msg.corrected
-		m.originalEditor.SetValue(msg.original)
-		m.correctedEditor.SetValue(msg.corrected)
+		// Trim trailing whitespace from both original and corrected
+		trimmedOriginal := trimTrailingWhitespace(msg.original)
+		trimmedCorrected := trimTrailingWhitespace(msg.corrected)
+		m.originalText = trimmedOriginal
+		m.correctedText = trimmedCorrected
+		m.originalEditor.SetValue(trimmedOriginal)
+		m.correctedEditor.SetValue(trimmedCorrected)
 		m.isLoading = false
 		m.status = "✓ Done"
 		if m.config.AutoCopy {
-			clipboard.Copy(msg.corrected)
+			clipboard.Copy(trimmedCorrected)
 			m.status = "✓ Done (copied)"
 		}
 		return m, nil
@@ -315,16 +325,16 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		currentMode := m.mode
 		m.mode = ModeGlobal
 		if currentMode == ModeEditOriginal {
-			m.originalText = m.originalEditor.Value()
+			m.originalText = trimTrailingWhitespace(m.originalEditor.Value())
 		} else if currentMode == ModeEditCorrected {
-			m.correctedText = m.correctedEditor.Value()
+			m.correctedText = trimTrailingWhitespace(m.correctedEditor.Value())
 		}
 		m.originalEditor.Blur()
 		m.correctedEditor.Blur()
 		return m, nil
 	case "ctrl+s":
 		if m.mode == ModeEditOriginal {
-			m.originalText = m.originalEditor.Value()
+			m.originalText = trimTrailingWhitespace(m.originalEditor.Value())
 			m.mode = ModeGlobal
 			m.originalEditor.Blur()
 			m.isLoading = true
@@ -354,8 +364,10 @@ func (m Model) pasteAndCorrect() tea.Cmd {
 			return errMsg{err: fmt.Errorf("failed to read clipboard: %w", err)}
 		}
 
+		// Trim trailing whitespace before processing
+		text = trimTrailingWhitespace(text)
 		if text == "" {
-			return errMsg{err: fmt.Errorf("clipboard is empty")}
+			return errMsg{err: fmt.Errorf("clipboard is empty or contains only whitespace")}
 		}
 
 		// Check cache first
@@ -363,9 +375,10 @@ func (m Model) pasteAndCorrect() tea.Cmd {
 			hash := m.cache.Hash(text)
 			if cached := m.cache.Get(hash); cached != "" {
 				// Cache hit - return immediately with both original and corrected
+				trimmedCached := trimTrailingWhitespace(cached)
 				return correctionDoneMsg{
 					original:  text,
-					corrected: cached,
+					corrected: trimmedCached,
 				}
 			}
 		}
@@ -397,15 +410,18 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 				return errMsg{err: err}
 			}
 
+			// Trim trailing whitespace from corrected text
+			trimmedCorrected := trimTrailingWhitespace(corrected)
+
 			// Save to cache
 			if m.cache != nil {
 				hash := m.cache.Hash(text)
-				m.cache.Set(hash, text, corrected)
+				m.cache.Set(hash, text, trimmedCorrected)
 			}
 
 			return correctionDoneMsg{
 				original:  text,
-				corrected: corrected,
+				corrected: trimmedCorrected,
 			}
 		},
 	)
@@ -421,15 +437,18 @@ func (m Model) correctText(text string) tea.Cmd {
 			return errMsg{err: err}
 		}
 
+		// Trim trailing whitespace from corrected text
+		trimmedCorrected := trimTrailingWhitespace(corrected)
+
 		// Save to cache
 		if m.cache != nil {
 			hash := m.cache.Hash(text)
-			m.cache.Set(hash, text, corrected)
+			m.cache.Set(hash, text, trimmedCorrected)
 		}
 
 		return correctionDoneMsg{
 			original:  text,
-			corrected: corrected,
+			corrected: trimmedCorrected,
 		}
 	}
 }
@@ -556,7 +575,7 @@ func (m Model) View() string {
 			Height(boxHeight)
 
 		content := m.correctedText
-		
+
 		// Show loading indicator in the box if loading
 		if m.isLoading && content == "" {
 			loadingText := lipgloss.NewStyle().
