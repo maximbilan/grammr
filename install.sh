@@ -3,10 +3,7 @@
 
 set -e
 
-VERSION="${1:-v1.0.0}"
-FORMULA_URL="https://raw.githubusercontent.com/maximbilan/grammr/${VERSION}/Formula/grammr.rb"
-
-echo "Installing grammr ${VERSION} via Homebrew..."
+echo "Installing grammr via Homebrew..."
 
 # Check if Homebrew is installed
 if ! command -v brew &> /dev/null; then
@@ -15,8 +12,14 @@ if ! command -v brew &> /dev/null; then
     exit 1
 fi
 
-# Install using the formula URL
-brew install --build-from-source "${FORMULA_URL}"
+# Add tap if not already added
+if ! brew tap-info maximbilan/grammr &>/dev/null; then
+    echo "Adding Homebrew tap..."
+    brew tap maximbilan/grammr https://github.com/maximbilan/grammr
+fi
+
+# Install grammr
+brew install grammr
 
 echo ""
 echo "✅ grammr installed successfully!"

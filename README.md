@@ -17,7 +17,14 @@
 
 ### Homebrew (macOS)
 
-**Option 1: Using the installation script (recommended)**
+**Option 1: Direct installation (recommended)**
+
+```bash
+brew tap maximbilan/grammr https://github.com/maximbilan/grammr
+brew install grammr
+```
+
+**Option 2: Using the installation script**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/maximbilan/grammr/main/install.sh | bash
@@ -28,7 +35,7 @@ Or for a specific version:
 curl -fsSL https://raw.githubusercontent.com/maximbilan/grammr/main/install.sh | bash -s v1.0.0
 ```
 
-**Option 2: Direct installation**
+**Option 3: Direct formula URL**
 
 ```bash
 brew install --build-from-source https://raw.githubusercontent.com/maximbilan/grammr/v1.0.0/Formula/grammr.rb

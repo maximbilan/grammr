@@ -35,12 +35,18 @@ When creating a new release:
 
 Users can install grammr via Homebrew using:
 
-**Method 1: Installation script (recommended)**
+**Method 1: Tap and install (recommended)**
+```bash
+brew tap maximbilan/grammr https://github.com/maximbilan/grammr
+brew install grammr
+```
+
+**Method 2: Installation script**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/maximbilan/grammr/main/install.sh | bash
 ```
 
-**Method 2: Direct formula URL**
+**Method 3: Direct formula URL**
 ```bash
 brew install --build-from-source https://raw.githubusercontent.com/maximbilan/grammr/v1.0.0/Formula/grammr.rb
 ```
