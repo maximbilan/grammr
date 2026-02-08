@@ -110,12 +110,12 @@ func parseDiffIntoChanges(original, corrected string) []DiffChange {
 	i := 0
 	for i < len(diffs) {
 		diff := diffs[i]
-		
+
 		if diff.Type == diffmatchpatch.DiffEqual {
 			i++
 			continue
 		}
-		
+
 		// Check if this is a delete followed by an insert (common pattern)
 		if diff.Type == diffmatchpatch.DiffDelete && i+1 < len(diffs) && diffs[i+1].Type == diffmatchpatch.DiffInsert {
 			// Pair them as a single change
@@ -153,7 +153,7 @@ func buildReviewedText(original string, changes []DiffChange) string {
 
 	for diffIdx < len(diffs) {
 		diff := diffs[diffIdx]
-		
+
 		if diff.Type == diffmatchpatch.DiffEqual {
 			result.WriteString(diff.Text)
 			diffIdx++
@@ -199,7 +199,7 @@ func buildReviewedTextFromDiffs(original, corrected string, changes []DiffChange
 
 	for i := 0; i < len(diffs); i++ {
 		diff := diffs[i]
-		
+
 		if diff.Type == diffmatchpatch.DiffEqual {
 			result.WriteString(diff.Text)
 		} else if diff.Type == diffmatchpatch.DiffDelete {
@@ -574,7 +574,7 @@ func (m Model) handleReviewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diffChanges[m.currentChange].Skipped = false
 			m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
 			m.currentChange++
-			
+
 			if m.currentChange >= len(m.diffChanges) {
 				// All changes reviewed - rebuild to ensure final state is correct
 				m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
@@ -601,7 +601,7 @@ func (m Model) handleReviewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diffChanges[m.currentChange].Skipped = true
 			m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
 			m.currentChange++
-			
+
 			if m.currentChange >= len(m.diffChanges) {
 				// All changes reviewed - rebuild to ensure final state is correct
 				m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
@@ -926,12 +926,12 @@ func (m Model) renderReviewMode() string {
 	// Show current change being reviewed
 	if m.currentChange < len(m.diffChanges) {
 		change := m.diffChanges[m.currentChange]
-		
+
 		changeLabel := lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("11")).
 			Render(fmt.Sprintf("Change %d of %d", m.currentChange+1, len(m.diffChanges)))
-		
+
 		s.WriteString(changeLabel)
 		s.WriteString("\n\n")
 
@@ -950,7 +950,7 @@ func (m Model) renderReviewMode() string {
 			parts := strings.SplitN(change.Text, " → ", 2)
 			deletePart := parts[0]
 			insertPart := parts[1]
-			
+
 			deleteStyle := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("9")).
 				Strikethrough(true).
@@ -958,11 +958,11 @@ func (m Model) renderReviewMode() string {
 			insertStyle := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("10")).
 				Bold(true)
-			
+
 			changeText := fmt.Sprintf("Change: %s → %s",
 				deleteStyle.Render(deletePart),
 				insertStyle.Render(insertPart))
-			
+
 			boxStyle := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("11")).
@@ -976,7 +976,7 @@ func (m Model) renderReviewMode() string {
 				Strikethrough(true).
 				Bold(true)
 			changeText := deleteStyle.Render(fmt.Sprintf("Remove: %q", change.Text))
-			
+
 			boxStyle := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("9")).
@@ -989,7 +989,7 @@ func (m Model) renderReviewMode() string {
 				Foreground(lipgloss.Color("10")).
 				Bold(true)
 			changeText := insertStyle.Render(fmt.Sprintf("Add: %q", change.Text))
-			
+
 			boxStyle := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("10")).
@@ -1006,17 +1006,17 @@ func (m Model) renderReviewMode() string {
 			Bold(true).
 			Foreground(lipgloss.Color("8")).
 			Render("Preview:")
-		
+
 		s.WriteString(previewLabel)
 		s.WriteString("\n")
-		
+
 		previewBoxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("8")).
 			Padding(1, 2).
 			Width(boxWidth).
 			Height(boxHeight)
-		
+
 		// Show the reviewed text with highlighting for current change
 		previewText := m.renderReviewPreview()
 		s.WriteString(previewBoxStyle.Render(previewText))
@@ -1047,20 +1047,20 @@ func (m Model) renderReviewPreview() string {
 	// Build a preview showing the current state with the current change highlighted
 	// Use the reviewed text which already has decisions applied
 	previewText := m.reviewedText
-	
+
 	// If we have a current change, highlight it in the preview
 	if m.currentChange < len(m.diffChanges) {
 		// Find and highlight the current change in the text
 		dmp := diffmatchpatch.New()
 		diffs := dmp.DiffMain(m.originalText, m.correctedText, false)
 		diffs = dmp.DiffCleanupSemantic(diffs)
-		
+
 		var result strings.Builder
 		changeIdx := 0
-		
+
 		for i := 0; i < len(diffs); i++ {
 			diff := diffs[i]
-			
+
 			if diff.Type == diffmatchpatch.DiffEqual {
 				result.WriteString(
 					lipgloss.NewStyle().
@@ -1172,10 +1172,10 @@ func (m Model) renderReviewPreview() string {
 				changeIdx++
 			}
 		}
-		
+
 		return result.String()
 	}
-	
+
 	// Fallback: just show the reviewed text
 	return previewText
 }
@@ -1218,7 +1218,7 @@ func (m Model) renderHelp() string {
 	content += "Edit Mode:\n"
 	content += "  Esc       Exit edit mode\n"
 	content += "  Ctrl+S    Save and re-correct (original only)\n\n"
-	
+
 	content += "Review Mode:\n"
 	content += "  Tab       Apply current change\n"
 	content += "  Space     Skip current change\n"

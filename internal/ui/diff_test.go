@@ -59,14 +59,14 @@ func TestRenderDiff(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := renderDiff(tt.original, tt.corrected)
-			
+
 			// Check that result is not empty (unless both inputs are empty)
 			if tt.original != "" || tt.corrected != "" {
 				if result == "" {
 					t.Errorf("renderDiff() returned empty string for non-empty input")
 				}
 			}
-			
+
 			// Check that expected text appears in result
 			for _, want := range tt.wantContains {
 				// Remove ANSI codes for comparison
@@ -75,7 +75,7 @@ func TestRenderDiff(t *testing.T) {
 					t.Errorf("renderDiff() result does not contain expected text %q. Got: %q", want, cleanResult)
 				}
 			}
-			
+
 			// Note: ANSI color codes won't be present in test environments (no TTY)
 			// Lipgloss only outputs ANSI codes when running in a real terminal
 			// The actual highlighting will work correctly in a real terminal environment
@@ -120,13 +120,13 @@ func TestRenderDiffEdgeCases(t *testing.T) {
 	if result == "" {
 		t.Error("renderDiff() should handle newlines")
 	}
-	
+
 	// Test with unicode
 	result = renderDiff("Hello 世界", "Hello 世界!")
 	if result == "" {
 		t.Error("renderDiff() should handle unicode characters")
 	}
-	
+
 	// Test with very long strings
 	longOriginal := strings.Repeat("Hello world ", 100)
 	longCorrected := strings.Repeat("Hello world ", 100) + "!"
