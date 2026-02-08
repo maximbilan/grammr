@@ -767,26 +767,21 @@ func (m Model) View() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	modeIndicator := ""
-	switch m.config.Mode {
-	case "casual":
-		modeIndicator = "[Casual]"
-	case "formal":
-		modeIndicator = "[Formal]"
-	case "academic":
-		modeIndicator = "[Academic]"
-	case "technical":
-		modeIndicator = "[Technical]"
-	}
+	// Render mode indicator with visual styling
+	modeIndicator := m.renderModeIndicator()
 
 	headerLoadingIndicator := ""
 	if m.isLoading {
 		headerLoadingIndicator = "[●] Correcting..."
 	}
 
-	header := headerStyle.Render("grammr v1.0") + " " + modeIndicator + " " + headerLoadingIndicator
-	status := statusStyle.Render(m.status)
+	// Build header components
+	headerLeft := headerStyle.Render("grammr v1.0") + " " + modeIndicator
+	if headerLoadingIndicator != "" {
+		headerLeft += " " + headerLoadingIndicator
+	}
 
+	status := statusStyle.Render(m.status)
 	if m.error != "" {
 		errorStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("9")).
@@ -795,7 +790,19 @@ func (m Model) View() string {
 		status = errorStyle.Render("✗ " + m.error)
 	}
 
-	s.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, header, status))
+	// Check if header fits on one line
+	headerWidth := lipgloss.Width(headerLeft)
+	statusWidth := lipgloss.Width(status)
+
+	if headerWidth+statusWidth+2 <= m.width {
+		// Fits on one line
+		s.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, headerLeft, status))
+	} else {
+		// Put status on next line if header is too wide
+		s.WriteString(headerLeft)
+		s.WriteString("\n")
+		s.WriteString(status)
+	}
 	s.WriteString("\n")
 	s.WriteString(strings.Repeat("─", m.width))
 	s.WriteString("\n\n")
@@ -815,9 +822,15 @@ func (m Model) View() string {
 		if boxWidth < 20 {
 			boxWidth = 20
 		}
-		boxHeight := (m.height - 10) / 2
-		if boxHeight < 5 {
-			boxHeight = 5
+		// Account for: header (1-2 lines), separator (1), spacing (1), labels (2), spacing between boxes (1), separator (1), footer (1-2)
+		// Total: ~9-11 lines for fixed content
+		availableHeight := m.height - 11
+		if availableHeight < 10 {
+			availableHeight = m.height - 9 // Minimum space for very small terminals
+		}
+		boxHeight := availableHeight / 2
+		if boxHeight < 3 {
+			boxHeight = 3 // Minimum box height
 		}
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -852,9 +865,15 @@ func (m Model) View() string {
 		if boxWidth < 20 {
 			boxWidth = 20
 		}
-		boxHeight := (m.height - 10) / 2
-		if boxHeight < 5 {
-			boxHeight = 5
+		// Account for: header (1-2 lines), separator (1), spacing (1), labels (2), spacing between boxes (1), separator (1), footer (1-2)
+		// Total: ~9-11 lines for fixed content
+		availableHeight := m.height - 11
+		if availableHeight < 10 {
+			availableHeight = m.height - 9 // Minimum space for very small terminals
+		}
+		boxHeight := availableHeight / 2
+		if boxHeight < 3 {
+			boxHeight = 3 // Minimum box height
 		}
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -886,7 +905,29 @@ func (m Model) View() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	footer := footerStyle.Render("V: Paste  C: Copy  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help")
+	// Create mode shortcuts with visual indication (compact version)
+	modeShortcuts := m.renderModeShortcuts()
+
+	// Build footer with mode shortcuts - always compact
+	mainFooterText := "V: Paste  C: Copy  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help"
+	mainFooter := footerStyle.Render(mainFooterText)
+	modeShortcutsWidth := lipgloss.Width(modeShortcuts)
+	mainFooterWidth := lipgloss.Width(mainFooter)
+
+	var footer string
+	if m.height > 22 && mainFooterWidth+modeShortcutsWidth+5 > m.width {
+		// Two-line footer if there's space and content is too wide
+		footer = mainFooter + "\n" + modeShortcuts
+	} else {
+		// Single-line footer
+		separator := "  |  "
+		if mainFooterWidth+modeShortcutsWidth+lipgloss.Width(separator) > m.width {
+			// If still too wide, use shorter separator
+			separator = " | "
+		}
+		footer = mainFooter + separator + modeShortcuts
+	}
+
 	s.WriteString(strings.Repeat("─", m.width))
 	s.WriteString("\n")
 	s.WriteString(footer)
@@ -915,10 +956,25 @@ func (m Model) renderReviewMode() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	header := headerStyle.Render("grammr - Review Changes")
+	// Render mode indicator with visual styling
+	modeIndicator := m.renderModeIndicator()
+
+	headerLeft := headerStyle.Render("grammr - Review Changes") + " " + modeIndicator
 	status := statusStyle.Render(m.status)
 
-	s.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, header, status))
+	// Check if header fits on one line
+	headerWidth := lipgloss.Width(headerLeft)
+	statusWidth := lipgloss.Width(status)
+
+	if headerWidth+statusWidth+2 <= m.width {
+		// Fits on one line
+		s.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, headerLeft, status))
+	} else {
+		// Put status on next line if header is too wide
+		s.WriteString(headerLeft)
+		s.WriteString("\n")
+		s.WriteString(status)
+	}
 	s.WriteString("\n")
 	s.WriteString(strings.Repeat("─", m.width))
 	s.WriteString("\n\n")
@@ -939,9 +995,16 @@ func (m Model) renderReviewMode() string {
 		if boxWidth < 20 {
 			boxWidth = 20
 		}
-		boxHeight := (m.height - 15) / 2
-		if boxHeight < 5 {
-			boxHeight = 5
+		// Account for: header (1-2 lines), separator (1), spacing (1), change label (1), spacing (1),
+		// preview label (1), spacing (1), separator (1), footer (1-2)
+		// Total: ~9-11 lines for fixed content
+		availableHeight := m.height - 11
+		if availableHeight < 10 {
+			availableHeight = m.height - 9 // Minimum space for very small terminals
+		}
+		boxHeight := availableHeight / 2
+		if boxHeight < 3 {
+			boxHeight = 3 // Minimum box height
 		}
 
 		// Show what's being changed
@@ -1180,6 +1243,77 @@ func (m Model) renderReviewPreview() string {
 	return previewText
 }
 
+// renderModeIndicator creates a visually styled badge for the current mode
+func (m Model) renderModeIndicator() string {
+	var label, color string
+
+	switch m.config.Mode {
+	case "casual":
+		label = "Casual"
+		color = "10" // Bright green
+	case "formal":
+		label = "Formal"
+		color = "12" // Bright blue
+	case "academic":
+		label = "Academic"
+		color = "13" // Bright magenta
+	case "technical":
+		label = "Technical"
+		color = "11" // Bright yellow
+	default:
+		// Capitalize first letter
+		if len(m.config.Mode) > 0 {
+			label = strings.ToUpper(string(m.config.Mode[0])) + strings.ToLower(m.config.Mode[1:])
+		} else {
+			label = m.config.Mode
+		}
+		color = "8" // Gray
+	}
+
+	// Use a simple colored style with brackets
+	modeStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(color))
+
+	return modeStyle.Render("[" + label + "]")
+}
+
+// renderModeShortcuts creates a visual indicator showing all modes with the active one highlighted
+func (m Model) renderModeShortcuts() string {
+	modes := []struct {
+		key   string
+		name  string
+		color string
+	}{
+		{"1", "Casual", "10"},
+		{"2", "Formal", "12"},
+		{"3", "Academic", "13"},
+		{"4", "Technical", "11"},
+	}
+
+	var shortcuts []string
+	for _, mode := range modes {
+		var style lipgloss.Style
+		if m.config.Mode == strings.ToLower(mode.name) {
+			// Active mode - highlighted with color and bold
+			style = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color(mode.color))
+			shortcuts = append(shortcuts, style.Render("["+mode.key+": "+mode.name+"]"))
+		} else {
+			// Inactive mode - subtle gray
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("8"))
+			shortcuts = append(shortcuts, style.Render(mode.key+": "+mode.name))
+		}
+	}
+
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8"))
+
+	return footerStyle.Render("Modes: " + strings.Join(shortcuts, " "))
+}
+
 func (m Model) renderHelp() string {
 	helpStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -1188,43 +1322,57 @@ func (m Model) renderHelp() string {
 		Width(m.width - 4).
 		Height(m.height - 4)
 
-	content := lipgloss.NewStyle().
+	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("6")).
-		Render("grammr - Keyboard Shortcuts\n\n")
+		Foreground(lipgloss.Color("6"))
 
-	content += "Global Mode:\n"
-	content += "  V, v      Paste from clipboard\n"
-	content += "  C, c      Copy corrected text\n"
-	content += "  E, e      Edit corrected text\n"
-	content += "  O, o      Edit original text\n"
-	content += "  R, r      Retry correction\n"
-	content += "  D, d      Toggle diff view\n"
-	content += "  A, a      Review changes word-by-word\n"
-	content += "  Q, q      Quit\n"
-	content += "  Ctrl+C    Force quit\n"
-	content += "  ?, F1     Show this help\n\n"
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("6"))
 
-	content += "Quick Actions:\n"
-	content += "  Ctrl+V    Paste & auto-correct\n"
-	content += "  Ctrl+C    Copy & quit\n\n"
+	// Build content line by line with proper alignment
+	var content strings.Builder
 
-	content += "Modes:\n"
-	content += "  1         Casual (default)\n"
-	content += "  2         Formal\n"
-	content += "  3         Academic\n"
-	content += "  4         Technical\n\n"
+	content.WriteString(headerStyle.Render("grammr - Keyboard Shortcuts"))
+	content.WriteString("\n\n")
 
-	content += "Edit Mode:\n"
-	content += "  Esc       Exit edit mode\n"
-	content += "  Ctrl+S    Save and re-correct (original only)\n\n"
+	content.WriteString(sectionStyle.Render("Global Mode:"))
+	content.WriteString("\n")
+	content.WriteString("  V, v      Paste from clipboard\n")
+	content.WriteString("  C, c      Copy corrected text\n")
+	content.WriteString("  E, e      Edit corrected text\n")
+	content.WriteString("  O, o      Edit original text\n")
+	content.WriteString("  R, r      Retry correction\n")
+	content.WriteString("  D, d      Toggle diff view\n")
+	content.WriteString("  A, a      Review changes word-by-word\n")
+	content.WriteString("  Q, q      Quit\n")
+	content.WriteString("  Ctrl+C    Force quit\n")
+	content.WriteString("  ?, F1     Show this help\n\n")
 
-	content += "Review Mode:\n"
-	content += "  Tab       Apply current change\n"
-	content += "  Space     Skip current change\n"
-	content += "  Esc       Exit review mode\n"
+	content.WriteString(sectionStyle.Render("Quick Actions:"))
+	content.WriteString("\n")
+	content.WriteString("  Ctrl+V    Paste & auto-correct\n")
+	content.WriteString("  Ctrl+C    Copy & quit\n\n")
 
-	return helpStyle.Render(content)
+	content.WriteString(sectionStyle.Render("Modes:"))
+	content.WriteString("\n")
+	content.WriteString("  1         Casual (default)\n")
+	content.WriteString("  2         Formal\n")
+	content.WriteString("  3         Academic\n")
+	content.WriteString("  4         Technical\n\n")
+
+	content.WriteString(sectionStyle.Render("Edit Mode:"))
+	content.WriteString("\n")
+	content.WriteString("  Esc       Exit edit mode\n")
+	content.WriteString("  Ctrl+S    Save and re-correct (original only)\n\n")
+
+	content.WriteString(sectionStyle.Render("Review Mode:"))
+	content.WriteString("\n")
+	content.WriteString("  Tab       Apply current change\n")
+	content.WriteString("  Space     Skip current change\n")
+	content.WriteString("  Esc       Exit review mode\n")
+
+	return helpStyle.Render(content.String())
 }
 
 func Run() error {
