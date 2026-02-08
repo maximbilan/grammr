@@ -10,6 +10,8 @@ import (
 func renderDiff(original, corrected string) string {
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(original, corrected, false)
+	// Clean up the diff to make it more semantic (word-level rather than character-level)
+	diffs = dmp.DiffCleanupSemantic(diffs)
 
 	var styled strings.Builder
 	for _, diff := range diffs {
