@@ -7,45 +7,66 @@ import (
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		name    string
-		apiKey  string
-		model   string
-		mode    string
-		wantErr bool
+		name     string
+		apiKey   string
+		model    string
+		mode     string
+		language string
+		wantErr  bool
 	}{
 		{
-			name:    "valid corrector",
-			apiKey:  "test-api-key",
-			model:   "gpt-4o",
-			mode:    "casual",
-			wantErr: false,
+			name:     "valid corrector",
+			apiKey:   "test-api-key",
+			model:    "gpt-4o",
+			mode:     "casual",
+			language: "english",
+			wantErr:  false,
 		},
 		{
-			name:    "empty API key",
-			apiKey:  "",
-			model:   "gpt-4o",
-			mode:    "casual",
-			wantErr: true,
+			name:     "empty API key",
+			apiKey:   "",
+			model:    "gpt-4o",
+			mode:     "casual",
+			language: "english",
+			wantErr:  true,
 		},
 		{
-			name:    "different model",
-			apiKey:  "test-api-key",
-			model:   "gpt-3.5-turbo",
-			mode:    "formal",
-			wantErr: false,
+			name:     "different model",
+			apiKey:   "test-api-key",
+			model:    "gpt-3.5-turbo",
+			mode:     "formal",
+			language: "english",
+			wantErr:  false,
 		},
 		{
-			name:    "different mode",
-			apiKey:  "test-api-key",
-			model:   "gpt-4o",
-			mode:    "academic",
-			wantErr: false,
+			name:     "different mode",
+			apiKey:   "test-api-key",
+			model:    "gpt-4o",
+			mode:     "academic",
+			language: "english",
+			wantErr:  false,
+		},
+		{
+			name:     "empty language defaults to english",
+			apiKey:   "test-api-key",
+			model:    "gpt-4o",
+			mode:     "casual",
+			language: "",
+			wantErr:  false,
+		},
+		{
+			name:     "non-english language",
+			apiKey:   "test-api-key",
+			model:    "gpt-4o",
+			mode:     "casual",
+			language: "spanish",
+			wantErr:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New(tt.apiKey, tt.model, tt.mode)
+			corrector, err := New(tt.apiKey, tt.model, tt.mode, tt.language)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -60,6 +81,13 @@ func TestNew(t *testing.T) {
 				}
 				if corrector.mode != tt.mode {
 					t.Errorf("New() mode = %v, want %v", corrector.mode, tt.mode)
+				}
+				expectedLang := tt.language
+				if expectedLang == "" {
+					expectedLang = "english"
+				}
+				if corrector.language != expectedLang {
+					t.Errorf("New() language = %v, want %v", corrector.language, expectedLang)
 				}
 				if corrector.client == nil {
 					t.Error("New() client is nil")
@@ -141,7 +169,7 @@ func TestBuildPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New("test-api-key", "gpt-4o", tt.mode)
+			corrector, err := New("test-api-key", "gpt-4o", tt.mode, "english")
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -192,7 +220,7 @@ func TestBuildPromptModeSpecificity(t *testing.T) {
 	prompts := make(map[string]string)
 
 	for _, mode := range modes {
-		corrector, err := New("test-api-key", "gpt-4o", mode)
+		corrector, err := New("test-api-key", "gpt-4o", mode, "english")
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
@@ -206,5 +234,57 @@ func TestBuildPromptModeSpecificity(t *testing.T) {
 				t.Errorf("buildPrompt() produces same prompt for %v and %v modes", mode1, mode2)
 			}
 		}
+	}
+}
+
+func TestBuildPromptWithLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		language string
+		wantLang string // Expected language in prompt
+	}{
+		{
+			name:     "english language",
+			language: "english",
+			wantLang: "", // English shouldn't add language instruction
+		},
+		{
+			name:     "spanish language",
+			language: "spanish",
+			wantLang: "spanish",
+		},
+		{
+			name:     "french language",
+			language: "french",
+			wantLang: "french",
+		},
+		{
+			name:     "empty language defaults to english",
+			language: "",
+			wantLang: "", // Should default to english, no instruction
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			corrector, err := New("test-api-key", "gpt-4o", "casual", tt.language)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			prompt := corrector.buildPrompt("test text")
+
+			if tt.wantLang == "" {
+				// Should not contain language instruction for English
+				if strings.Contains(strings.ToLower(prompt), "the text is in") {
+					t.Errorf("buildPrompt() should not contain language instruction for English")
+				}
+			} else {
+				// Should contain language instruction
+				if !strings.Contains(strings.ToLower(prompt), tt.wantLang) {
+					t.Errorf("buildPrompt() should contain language %q in prompt. Got: %q", tt.wantLang, prompt)
+				}
+			}
+		})
 	}
 }

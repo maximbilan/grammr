@@ -284,7 +284,7 @@ func NewModel(cfg *config.Config) (*Model, error) {
 		}
 	}
 
-	cor, err := corrector.New(cfg.APIKey, cfg.Model, cfg.Mode)
+	cor, err := corrector.New(cfg.APIKey, cfg.Model, cfg.Mode, cfg.Language)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create corrector: %w", err)
 	}
@@ -489,7 +489,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "1":
 		m.config.Mode = "casual"
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "casual")
+		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "casual", m.config.Language)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
@@ -498,7 +498,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "2":
 		m.config.Mode = "formal"
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "formal")
+		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "formal", m.config.Language)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
@@ -507,7 +507,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		m.config.Mode = "academic"
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "academic")
+		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "academic", m.config.Language)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
@@ -516,7 +516,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "4":
 		m.config.Mode = "technical"
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "technical")
+		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "technical", m.config.Language)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
