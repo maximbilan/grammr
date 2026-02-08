@@ -11,8 +11,7 @@ class Grammr < Formula
   desc "Lightning-fast AI grammar checker in your terminal"
   homepage "https://github.com/maximbilan/grammr"
   url "https://github.com/maximbilan/grammr.git",
-      tag:      "v1.0.0",
-      revision: "HEAD"
+      tag:      "v1.0.0"
   license "MIT"
   head "https://github.com/maximbilan/grammr.git", branch: "main"
 
