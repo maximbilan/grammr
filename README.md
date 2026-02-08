@@ -29,7 +29,12 @@ go build -o grammr
 ## Setup
 
 1. Get an API key from [OpenAI](https://platform.openai.com/api-keys)
-2. Configure grammr:
+2. Initialize configuration (optional, creates config directory):
+```bash
+grammr config init
+```
+
+3. Configure grammr:
 ```bash
 grammr config set api_key YOUR_API_KEY
 ```
@@ -52,6 +57,7 @@ That's it! 🎉
 
 ### Keyboard Shortcuts
 
+**Global Mode:**
 | Key | Action |
 |-----|--------|
 | `V` | Paste from clipboard |
@@ -60,10 +66,24 @@ That's it! 🎉
 | `O` | Edit original text |
 | `R` | Retry correction |
 | `D` | Toggle diff view |
+| `A` | Review changes word-by-word |
 | `Q` | Quit |
 | `Ctrl+V` | Paste & auto-correct |
 | `Ctrl+C` | Copy & quit |
 | `?` or `F1` | Show help |
+
+**Edit Mode:**
+| Key | Action |
+|-----|--------|
+| `Esc` | Exit edit mode |
+| `Ctrl+S` | Save and re-correct (original only) |
+
+**Review Mode:**
+| Key | Action |
+|-----|--------|
+| `Tab` | Apply current change |
+| `Space` | Skip current change |
+| `Esc` | Exit review mode |
 
 ### Modes
 
@@ -115,24 +135,63 @@ grammr
 # Press V to paste
 ```
 
+**Review changes word-by-word:**
+```bash
+grammr
+# Press V to paste
+# Press A to enter review mode
+# Press Tab to apply changes, Space to skip
+# Press Esc when done
+```
+
 **Clear cache:**
 ```bash
 rm -rf ~/.grammr/cache/
 ```
 
+**Initialize config:**
+```bash
+grammr config init
+```
+
 ## Features
 
 - ✅ Real-time streaming corrections
-- ✅ Smart caching (hash-based)
+- ✅ Smart caching (hash-based, configurable TTL)
 - ✅ Beautiful colored diffs
-- ✅ Multiple writing modes
+- ✅ Word-by-word change review mode
+- ✅ Multiple writing modes (casual, formal, academic, technical)
+- ✅ Inline text editing
 - ✅ Vim-inspired keybindings
 - ✅ Cross-platform (macOS, Linux, Windows)
 - ✅ Single binary, no dependencies
+- ✅ Comprehensive test suite
 
 ## Why the weird name?
 
 Because a grammar checker with a misspelled name is hilariously ironic. Also, it's shorter to type. 😄
+
+## Development
+
+### Running Tests
+
+```bash
+go test ./...
+```
+
+### Building
+
+```bash
+go build -o grammr
+```
+
+### Test Coverage
+
+The project includes comprehensive unit tests covering:
+- Cache operations (hash, get, set, expiration)
+- Configuration management (load, save, set, get)
+- Corrector initialization and prompt building
+- UI utility functions (diff parsing, text building, whitespace trimming)
 
 ## Roadmap
 
@@ -141,6 +200,10 @@ Because a grammar checker with a misspelled name is hilariously ironic. Also, it
 - [ ] Plugin system for custom corrections
 - [ ] Multi-language support
 - [ ] Batch file processing
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
