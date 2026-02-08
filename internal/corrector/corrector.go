@@ -9,20 +9,27 @@ import (
 )
 
 type Corrector struct {
-	client *openai.Client
-	model  string
-	mode   string
+	client   *openai.Client
+	model    string
+	mode     string
+	language string
 }
 
-func New(apiKey, model, mode string) (*Corrector, error) {
+func New(apiKey, model, mode, language string) (*Corrector, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("API key is required")
 	}
 
+	// Default to English if language is empty
+	if language == "" {
+		language = "english"
+	}
+
 	return &Corrector{
-		client: openai.NewClient(apiKey),
-		model:  model,
-		mode:   mode,
+		client:   openai.NewClient(apiKey),
+		model:    model,
+		mode:     mode,
+		language: language,
 	}, nil
 }
 
@@ -46,7 +53,13 @@ Only output the corrected text, nothing else.`,
 		prompt = prompts["casual"]
 	}
 
-	return fmt.Sprintf("%s\n\nText to correct:\n%s", prompt, text)
+	// Add language instruction if not English
+	languageInstruction := ""
+	if c.language != "" && c.language != "english" {
+		languageInstruction = fmt.Sprintf(" The text is in %s. Correct it in %s.\n", c.language, c.language)
+	}
+
+	return fmt.Sprintf("%s%s\nText to correct:\n%s", prompt, languageInstruction, text)
 }
 
 func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func(string)) error {

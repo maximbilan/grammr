@@ -68,6 +68,11 @@ Optional: Choose a model (default: gpt-4o)
 grammr config set model gpt-4o-mini  # Faster and cheaper
 ```
 
+Optional: Set language (default: english)
+```bash
+grammr config set language spanish  # For Spanish text correction
+```
+
 ## Usage
 
 1. Copy text from anywhere (Cmd+C / Ctrl+C)
@@ -124,6 +129,7 @@ Edit `~/.grammr/config.yaml`:
 api_key: "sk-..."
 model: "gpt-4o"  # or gpt-4o-mini
 mode: "casual"
+language: "english"  # Default: english. Options: english, spanish, french, german, etc.
 cache_enabled: true
 cache_ttl_days: 7
 show_diff: true
@@ -133,7 +139,8 @@ auto_copy: false
 Or use the CLI:
 ```bash
 grammr config set model gpt-4o-mini
-grammr config get model
+grammr config set language spanish
+grammr config get language
 ```
 
 ## Model Comparison

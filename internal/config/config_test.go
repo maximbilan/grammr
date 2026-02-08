@@ -48,6 +48,9 @@ func TestLoad(t *testing.T) {
 		if cfg.CacheTTLDays != 7 {
 			t.Errorf("Load() CacheTTLDays = %v, want 7", cfg.CacheTTLDays)
 		}
+		if cfg.Language != "english" {
+			t.Errorf("Load() Language = %v, want english", cfg.Language)
+		}
 
 		// Verify config directory was created
 		configPath := filepath.Join(tmpDir, ".grammr")
@@ -189,9 +192,12 @@ func TestSave(t *testing.T) {
 			if loaded.CacheEnabled != tt.cfg.CacheEnabled {
 				t.Errorf("Save() CacheEnabled = %v, want %v", loaded.CacheEnabled, tt.cfg.CacheEnabled)
 			}
-			if loaded.CacheTTLDays != tt.cfg.CacheTTLDays {
-				t.Errorf("Save() CacheTTLDays = %v, want %v", loaded.CacheTTLDays, tt.cfg.CacheTTLDays)
-			}
+		if loaded.CacheTTLDays != tt.cfg.CacheTTLDays {
+			t.Errorf("Save() CacheTTLDays = %v, want %v", loaded.CacheTTLDays, tt.cfg.CacheTTLDays)
+		}
+		if tt.cfg.Language != "" && loaded.Language != tt.cfg.Language {
+			t.Errorf("Save() Language = %v, want %v", loaded.Language, tt.cfg.Language)
+		}
 		})
 	}
 }
