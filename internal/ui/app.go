@@ -14,6 +14,7 @@ import (
 	"github.com/maximbilan/grammr/internal/clipboard"
 	"github.com/maximbilan/grammr/internal/config"
 	"github.com/maximbilan/grammr/internal/corrector"
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 // trimTrailingWhitespace removes trailing whitespace from text
@@ -28,7 +29,16 @@ const (
 	ModeEditOriginal
 	ModeEditCorrected
 	ModeHelp
+	ModeReviewDiff
 )
+
+// DiffChange represents a single change in the diff
+type DiffChange struct {
+	Type       diffmatchpatch.Operation
+	Text       string
+	Applied    bool // true if user applied this change
+	Skipped    bool // true if user skipped this change
+}
 
 type Model struct {
 	// State
@@ -46,6 +56,11 @@ type Model struct {
 	showDiff  bool
 	error     string
 	status    string
+
+	// Diff review state
+	diffChanges   []DiffChange // All changes from the diff
+	currentChange int          // Index of current change being reviewed
+	reviewedText  string       // Final text built from applied changes
 
 	// Services
 	corrector *corrector.Corrector
@@ -83,6 +98,181 @@ func (e errMsg) Error() string {
 }
 
 type statusMsg string
+
+// parseDiffIntoChanges parses the diff and returns a list of changes to review
+// It pairs delete+insert sequences as single changes for better UX
+func parseDiffIntoChanges(original, corrected string) []DiffChange {
+	dmp := diffmatchpatch.New()
+	diffs := dmp.DiffMain(original, corrected, false)
+	diffs = dmp.DiffCleanupSemantic(diffs)
+
+	changes := make([]DiffChange, 0)
+	i := 0
+	for i < len(diffs) {
+		diff := diffs[i]
+		
+		if diff.Type == diffmatchpatch.DiffEqual {
+			i++
+			continue
+		}
+		
+		// Check if this is a delete followed by an insert (common pattern)
+		if diff.Type == diffmatchpatch.DiffDelete && i+1 < len(diffs) && diffs[i+1].Type == diffmatchpatch.DiffInsert {
+			// Pair them as a single change
+			changes = append(changes, DiffChange{
+				Type:    diffmatchpatch.DiffDelete, // Use delete as primary type
+				Text:    diff.Text + " → " + diffs[i+1].Text, // Show both
+				Applied: false,
+				Skipped: false,
+			})
+			i += 2
+		} else {
+			// Single change
+			changes = append(changes, DiffChange{
+				Type:    diff.Type,
+				Text:    diff.Text,
+				Applied: false,
+				Skipped: false,
+			})
+			i++
+		}
+	}
+	return changes
+}
+
+// buildReviewedText builds the final text based on applied changes
+func buildReviewedText(original string, changes []DiffChange) string {
+	dmp := diffmatchpatch.New()
+	diffs := dmp.DiffMain(original, original, false) // Start with original
+	diffs = dmp.DiffCleanupSemantic(diffs)
+
+	// Rebuild diffs with applied changes
+	changeIdx := 0
+	var result strings.Builder
+	diffIdx := 0
+
+	for diffIdx < len(diffs) {
+		diff := diffs[diffIdx]
+		
+		if diff.Type == diffmatchpatch.DiffEqual {
+			result.WriteString(diff.Text)
+			diffIdx++
+		} else if diff.Type == diffmatchpatch.DiffDelete {
+			// Check if this change was applied
+			if changeIdx < len(changes) && changes[changeIdx].Type == diffmatchpatch.DiffDelete {
+				if changes[changeIdx].Applied {
+					// Skip the delete (don't write it)
+				} else if changes[changeIdx].Skipped {
+					// Keep the original text
+					result.WriteString(diff.Text)
+				}
+				changeIdx++
+			} else {
+				// No decision made, skip by default
+				result.WriteString(diff.Text)
+			}
+			diffIdx++
+		} else if diff.Type == diffmatchpatch.DiffInsert {
+			// Check if this change was applied
+			if changeIdx < len(changes) && changes[changeIdx].Type == diffmatchpatch.DiffInsert {
+				if changes[changeIdx].Applied {
+					// Apply the insert
+					result.WriteString(diff.Text)
+				}
+				changeIdx++
+			}
+			diffIdx++
+		}
+	}
+
+	return result.String()
+}
+
+// buildReviewedTextFromDiffs builds text from original and corrected using change decisions
+func buildReviewedTextFromDiffs(original, corrected string, changes []DiffChange) string {
+	dmp := diffmatchpatch.New()
+	diffs := dmp.DiffMain(original, corrected, false)
+	diffs = dmp.DiffCleanupSemantic(diffs)
+
+	var result strings.Builder
+	changeIdx := 0
+
+	for i := 0; i < len(diffs); i++ {
+		diff := diffs[i]
+		
+		if diff.Type == diffmatchpatch.DiffEqual {
+			result.WriteString(diff.Text)
+		} else if diff.Type == diffmatchpatch.DiffDelete {
+			// Check if there's a following insert (paired change)
+			if i+1 < len(diffs) && diffs[i+1].Type == diffmatchpatch.DiffInsert {
+				// This is a paired delete+insert
+				if changeIdx < len(changes) {
+					change := changes[changeIdx]
+					// Verify this is a paired change (should contain " → ")
+					if strings.Contains(change.Text, " → ") {
+						if change.Applied {
+							// Apply the change: skip delete, add insert
+							result.WriteString(diffs[i+1].Text)
+						} else if change.Skipped {
+							// Skip the change: keep original (delete text)
+							result.WriteString(diff.Text)
+						} else {
+							// No decision yet - keep original
+							result.WriteString(diff.Text)
+						}
+						changeIdx++
+						i++ // Skip the insert as we've handled it
+					} else {
+						// Change doesn't match - this shouldn't happen
+						// Keep original and don't increment changeIdx
+						result.WriteString(diff.Text)
+						i++ // Skip the insert
+					}
+				} else {
+					// No more changes - keep original
+					result.WriteString(diff.Text)
+					i++ // Skip the insert
+				}
+			} else {
+				// Single delete (not paired with insert)
+				if changeIdx < len(changes) {
+					change := changes[changeIdx]
+					// This should be a single delete change (no " → " in text)
+					if change.Type == diffmatchpatch.DiffDelete && !strings.Contains(change.Text, " → ") {
+						if change.Skipped {
+							result.WriteString(diff.Text)
+						}
+						// If applied, we don't write it (it's deleted)
+						changeIdx++
+					} else {
+						// Mismatch - keep original
+						result.WriteString(diff.Text)
+					}
+				} else {
+					result.WriteString(diff.Text)
+				}
+			}
+		} else if diff.Type == diffmatchpatch.DiffInsert {
+			// Single insert (not paired with delete)
+			// This should only happen if we didn't pair it with a delete above
+			if changeIdx < len(changes) {
+				change := changes[changeIdx]
+				// This should be a single insert change
+				if change.Type == diffmatchpatch.DiffInsert && !strings.Contains(change.Text, " → ") {
+					if change.Applied {
+						result.WriteString(diff.Text)
+					}
+					// If skipped, we don't write it
+					changeIdx++
+				} else {
+					// Mismatch - don't write the insert
+				}
+			}
+		}
+	}
+
+	return result.String()
+}
 
 func NewModel(cfg *config.Config) (*Model, error) {
 	var c *cache.Cache
@@ -160,6 +350,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		}
+
+		if m.mode == ModeReviewDiff {
+			return m.handleReviewMode(msg)
 		}
 
 		if m.mode == ModeEditOriginal || m.mode == ModeEditCorrected {
@@ -262,6 +456,20 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d", "D":
 		m.showDiff = !m.showDiff
 		return m, nil
+	case "a", "A":
+		// Enter review mode to apply/skip changes word by word
+		if m.originalText != "" && m.correctedText != "" {
+			m.diffChanges = parseDiffIntoChanges(m.originalText, m.correctedText)
+			m.currentChange = 0
+			if len(m.diffChanges) > 0 {
+				m.mode = ModeReviewDiff
+				m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
+				m.status = fmt.Sprintf("Reviewing changes (%d/%d) - Tab: Apply, Space: Skip, Esc: Exit", m.currentChange+1, len(m.diffChanges))
+			} else {
+				m.status = "No changes to review"
+			}
+		}
+		return m, nil
 	case "?", "f1":
 		m.mode = ModeHelp
 		return m, nil
@@ -354,6 +562,83 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	return m, nil
+}
+
+func (m Model) handleReviewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "tab":
+		// Apply current change
+		if m.currentChange < len(m.diffChanges) {
+			m.diffChanges[m.currentChange].Applied = true
+			m.diffChanges[m.currentChange].Skipped = false
+			m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
+			m.currentChange++
+			
+			if m.currentChange >= len(m.diffChanges) {
+				// All changes reviewed - rebuild to ensure final state is correct
+				m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
+				m.correctedText = m.reviewedText
+				m.correctedEditor.SetValue(m.reviewedText)
+				// Disable diff view to show the actual corrected text, not a diff
+				m.showDiff = false
+				// Copy to clipboard
+				if err := clipboard.Copy(m.reviewedText); err != nil {
+					m.status = fmt.Sprintf("✓ All changes reviewed (copy failed: %v)", err)
+				} else {
+					m.status = "✓ All changes reviewed (copied)"
+				}
+				m.mode = ModeGlobal
+			} else {
+				m.status = fmt.Sprintf("Reviewing changes (%d/%d) - Tab: Apply, Space: Skip, Esc: Exit", m.currentChange+1, len(m.diffChanges))
+			}
+		}
+		return m, nil
+	case " ":
+		// Skip current change
+		if m.currentChange < len(m.diffChanges) {
+			m.diffChanges[m.currentChange].Applied = false
+			m.diffChanges[m.currentChange].Skipped = true
+			m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
+			m.currentChange++
+			
+			if m.currentChange >= len(m.diffChanges) {
+				// All changes reviewed - rebuild to ensure final state is correct
+				m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
+				m.correctedText = m.reviewedText
+				m.correctedEditor.SetValue(m.reviewedText)
+				// Disable diff view to show the actual corrected text, not a diff
+				m.showDiff = false
+				// Copy to clipboard
+				if err := clipboard.Copy(m.reviewedText); err != nil {
+					m.status = fmt.Sprintf("✓ All changes reviewed (copy failed: %v)", err)
+				} else {
+					m.status = "✓ All changes reviewed (copied)"
+				}
+				m.mode = ModeGlobal
+			} else {
+				m.status = fmt.Sprintf("Reviewing changes (%d/%d) - Tab: Apply, Space: Skip, Esc: Exit", m.currentChange+1, len(m.diffChanges))
+			}
+		}
+		return m, nil
+	case "esc":
+		// Exit review mode and apply reviewed changes
+		// Rebuild reviewedText to ensure it's up-to-date with all decisions
+		m.reviewedText = buildReviewedTextFromDiffs(m.originalText, m.correctedText, m.diffChanges)
+		// Update correctedText with the reviewed text (which includes all applied changes)
+		m.correctedText = m.reviewedText
+		m.correctedEditor.SetValue(m.reviewedText)
+		// Disable diff view to show the actual corrected text, not a diff
+		m.showDiff = false
+		// Copy to clipboard
+		if err := clipboard.Copy(m.reviewedText); err != nil {
+			m.status = fmt.Sprintf("Review mode exited (copy failed: %v)", err)
+		} else {
+			m.status = "Review mode exited (copied)"
+		}
+		m.mode = ModeGlobal
+		return m, nil
+	}
 	return m, nil
 }
 
@@ -456,6 +741,10 @@ func (m Model) correctText(text string) tea.Cmd {
 func (m Model) View() string {
 	if m.mode == ModeHelp {
 		return m.renderHelp()
+	}
+
+	if m.mode == ModeReviewDiff {
+		return m.renderReviewMode()
 	}
 
 	// Ensure we have valid dimensions
@@ -583,7 +872,8 @@ func (m Model) View() string {
 				Italic(true).
 				Render("Correcting...")
 			content = loadingText
-		} else if m.showDiff && m.originalText != "" && m.correctedText != "" {
+		} else if m.showDiff && m.originalText != "" && m.correctedText != "" && m.mode != ModeReviewDiff {
+			// Only show diff view when not in review mode (review mode has its own display)
 			content = renderDiff(m.originalText, m.correctedText)
 		}
 
@@ -596,12 +886,298 @@ func (m Model) View() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	footer := footerStyle.Render("V: Paste  C: Copy  E: Edit  R: Retry  D: Diff  Q: Quit  ?: Help")
+	footer := footerStyle.Render("V: Paste  C: Copy  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help")
 	s.WriteString(strings.Repeat("─", m.width))
 	s.WriteString("\n")
 	s.WriteString(footer)
 
 	return s.String()
+}
+
+func (m Model) renderReviewMode() string {
+	// Ensure we have valid dimensions
+	if m.width == 0 {
+		m.width = 80
+	}
+	if m.height == 0 {
+		m.height = 24
+	}
+
+	var s strings.Builder
+
+	// Header
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("6")).
+		Padding(0, 1)
+
+	statusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Padding(0, 1)
+
+	header := headerStyle.Render("grammr - Review Changes")
+	status := statusStyle.Render(m.status)
+
+	s.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, header, status))
+	s.WriteString("\n")
+	s.WriteString(strings.Repeat("─", m.width))
+	s.WriteString("\n\n")
+
+	// Show current change being reviewed
+	if m.currentChange < len(m.diffChanges) {
+		change := m.diffChanges[m.currentChange]
+		
+		changeLabel := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("11")).
+			Render(fmt.Sprintf("Change %d of %d", m.currentChange+1, len(m.diffChanges)))
+		
+		s.WriteString(changeLabel)
+		s.WriteString("\n\n")
+
+		boxWidth := m.width - 4
+		if boxWidth < 20 {
+			boxWidth = 20
+		}
+		boxHeight := (m.height - 15) / 2
+		if boxHeight < 5 {
+			boxHeight = 5
+		}
+
+		// Show what's being changed
+		if strings.Contains(change.Text, " → ") {
+			// Paired change (delete → insert)
+			parts := strings.SplitN(change.Text, " → ", 2)
+			deletePart := parts[0]
+			insertPart := parts[1]
+			
+			deleteStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("9")).
+				Strikethrough(true).
+				Bold(true)
+			insertStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("10")).
+				Bold(true)
+			
+			changeText := fmt.Sprintf("Change: %s → %s",
+				deleteStyle.Render(deletePart),
+				insertStyle.Render(insertPart))
+			
+			boxStyle := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("11")).
+				Padding(1, 2).
+				Width(boxWidth).
+				Height(boxHeight)
+			s.WriteString(boxStyle.Render(changeText))
+		} else if change.Type == diffmatchpatch.DiffDelete {
+			deleteStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("9")).
+				Strikethrough(true).
+				Bold(true)
+			changeText := deleteStyle.Render(fmt.Sprintf("Remove: %q", change.Text))
+			
+			boxStyle := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("9")).
+				Padding(1, 2).
+				Width(boxWidth).
+				Height(boxHeight)
+			s.WriteString(boxStyle.Render(changeText))
+		} else if change.Type == diffmatchpatch.DiffInsert {
+			insertStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("10")).
+				Bold(true)
+			changeText := insertStyle.Render(fmt.Sprintf("Add: %q", change.Text))
+			
+			boxStyle := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("10")).
+				Padding(1, 2).
+				Width(boxWidth).
+				Height(boxHeight)
+			s.WriteString(boxStyle.Render(changeText))
+		}
+
+		s.WriteString("\n\n")
+
+		// Show preview of reviewed text so far
+		previewLabel := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("8")).
+			Render("Preview:")
+		
+		s.WriteString(previewLabel)
+		s.WriteString("\n")
+		
+		previewBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8")).
+			Padding(1, 2).
+			Width(boxWidth).
+			Height(boxHeight)
+		
+		// Show the reviewed text with highlighting for current change
+		previewText := m.renderReviewPreview()
+		s.WriteString(previewBoxStyle.Render(previewText))
+	} else {
+		// All changes reviewed
+		doneStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("2")).
+			Bold(true)
+		s.WriteString(doneStyle.Render("✓ All changes reviewed!"))
+	}
+
+	s.WriteString("\n\n")
+
+	// Footer
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Padding(0, 1)
+
+	footer := footerStyle.Render("Tab: Apply  Space: Skip  Esc: Exit")
+	s.WriteString(strings.Repeat("─", m.width))
+	s.WriteString("\n")
+	s.WriteString(footer)
+
+	return s.String()
+}
+
+func (m Model) renderReviewPreview() string {
+	// Build a preview showing the current state with the current change highlighted
+	// Use the reviewed text which already has decisions applied
+	previewText := m.reviewedText
+	
+	// If we have a current change, highlight it in the preview
+	if m.currentChange < len(m.diffChanges) {
+		// Find and highlight the current change in the text
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(m.originalText, m.correctedText, false)
+		diffs = dmp.DiffCleanupSemantic(diffs)
+		
+		var result strings.Builder
+		changeIdx := 0
+		
+		for i := 0; i < len(diffs); i++ {
+			diff := diffs[i]
+			
+			if diff.Type == diffmatchpatch.DiffEqual {
+				result.WriteString(
+					lipgloss.NewStyle().
+						Foreground(lipgloss.Color("8")).
+						Render(diff.Text),
+				)
+			} else if diff.Type == diffmatchpatch.DiffDelete {
+				// Check if paired with insert
+				if i+1 < len(diffs) && diffs[i+1].Type == diffmatchpatch.DiffInsert {
+					// Paired change
+					if changeIdx == m.currentChange {
+						// Highlight current change
+						result.WriteString(
+							lipgloss.NewStyle().
+								Foreground(lipgloss.Color("11")).
+								Background(lipgloss.Color("9")).
+								Bold(true).
+								Strikethrough(true).
+								Render(diff.Text),
+						)
+						result.WriteString(
+							lipgloss.NewStyle().
+								Foreground(lipgloss.Color("11")).
+								Background(lipgloss.Color("10")).
+								Bold(true).
+								Render(diffs[i+1].Text),
+						)
+					} else if changeIdx < len(m.diffChanges) {
+						change := m.diffChanges[changeIdx]
+						if change.Applied {
+							result.WriteString(
+								lipgloss.NewStyle().
+									Foreground(lipgloss.Color("10")).
+									Render(diffs[i+1].Text),
+							)
+						} else if change.Skipped {
+							result.WriteString(
+								lipgloss.NewStyle().
+									Foreground(lipgloss.Color("8")).
+									Render(diff.Text),
+							)
+						} else {
+							// Not reviewed yet
+							result.WriteString(
+								lipgloss.NewStyle().
+									Foreground(lipgloss.Color("9")).
+									Strikethrough(true).
+									Render(diff.Text),
+							)
+							result.WriteString(
+								lipgloss.NewStyle().
+									Foreground(lipgloss.Color("10")).
+									Render(diffs[i+1].Text),
+							)
+						}
+					}
+					changeIdx++
+					i++ // Skip insert
+				} else {
+					// Single delete
+					if changeIdx == m.currentChange {
+						result.WriteString(
+							lipgloss.NewStyle().
+								Foreground(lipgloss.Color("11")).
+								Background(lipgloss.Color("9")).
+								Bold(true).
+								Strikethrough(true).
+								Render(diff.Text),
+						)
+					} else if changeIdx < len(m.diffChanges) {
+						change := m.diffChanges[changeIdx]
+						if change.Skipped {
+							result.WriteString(
+								lipgloss.NewStyle().
+									Foreground(lipgloss.Color("8")).
+									Render(diff.Text),
+							)
+						} else if !change.Applied {
+							result.WriteString(
+								lipgloss.NewStyle().
+									Foreground(lipgloss.Color("9")).
+									Strikethrough(true).
+									Render(diff.Text),
+							)
+						}
+					}
+					changeIdx++
+				}
+			} else if diff.Type == diffmatchpatch.DiffInsert {
+				// Single insert (shouldn't happen if paired correctly, but handle it)
+				if changeIdx == m.currentChange {
+					result.WriteString(
+						lipgloss.NewStyle().
+							Foreground(lipgloss.Color("11")).
+							Background(lipgloss.Color("10")).
+							Bold(true).
+							Render(diff.Text),
+					)
+				} else if changeIdx < len(m.diffChanges) {
+					change := m.diffChanges[changeIdx]
+					if change.Applied {
+						result.WriteString(
+							lipgloss.NewStyle().
+								Foreground(lipgloss.Color("10")).
+								Render(diff.Text),
+						)
+					}
+				}
+				changeIdx++
+			}
+		}
+		
+		return result.String()
+	}
+	
+	// Fallback: just show the reviewed text
+	return previewText
 }
 
 func (m Model) renderHelp() string {
@@ -624,6 +1200,7 @@ func (m Model) renderHelp() string {
 	content += "  O, o      Edit original text\n"
 	content += "  R, r      Retry correction\n"
 	content += "  D, d      Toggle diff view\n"
+	content += "  A, a      Review changes word-by-word\n"
 	content += "  Q, q      Quit\n"
 	content += "  Ctrl+C    Force quit\n"
 	content += "  ?, F1     Show this help\n\n"
@@ -640,7 +1217,12 @@ func (m Model) renderHelp() string {
 
 	content += "Edit Mode:\n"
 	content += "  Esc       Exit edit mode\n"
-	content += "  Ctrl+S    Save and re-correct (original only)\n"
+	content += "  Ctrl+S    Save and re-correct (original only)\n\n"
+	
+	content += "Review Mode:\n"
+	content += "  Tab       Apply current change\n"
+	content += "  Space     Skip current change\n"
+	content += "  Esc       Exit review mode\n"
 
 	return helpStyle.Render(content)
 }
