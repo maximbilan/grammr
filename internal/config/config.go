@@ -9,15 +9,16 @@ import (
 )
 
 type Config struct {
-	APIKey       string `mapstructure:"api_key"`
-	Model        string `mapstructure:"model"`
-	Theme        string `mapstructure:"theme"`
-	ShowDiff     bool   `mapstructure:"show_diff"`
-	AutoCopy     bool   `mapstructure:"auto_copy"`
-	Mode         string `mapstructure:"mode"`
-	Language     string `mapstructure:"language"`
-	CacheEnabled bool   `mapstructure:"cache_enabled"`
-	CacheTTLDays int    `mapstructure:"cache_ttl_days"`
+	APIKey            string `mapstructure:"api_key"`
+	Model             string `mapstructure:"model"`
+	Theme             string `mapstructure:"theme"`
+	ShowDiff          bool   `mapstructure:"show_diff"`
+	AutoCopy          bool   `mapstructure:"auto_copy"`
+	Mode              string `mapstructure:"mode"`
+	Language          string `mapstructure:"language"`
+	TranslationLanguage string `mapstructure:"translation_language"`
+	CacheEnabled      bool   `mapstructure:"cache_enabled"`
+	CacheTTLDays      int    `mapstructure:"cache_ttl_days"`
 }
 
 func Load() (*Config, error) {
@@ -37,6 +38,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("show_diff", true)
 	viper.SetDefault("mode", "casual")
 	viper.SetDefault("language", "english")
+	viper.SetDefault("translation_language", "")
 	viper.SetDefault("cache_enabled", true)
 	viper.SetDefault("cache_ttl_days", 7)
 
@@ -82,6 +84,7 @@ func Save(cfg *Config) error {
 	viper.Set("auto_copy", cfg.AutoCopy)
 	viper.Set("mode", cfg.Mode)
 	viper.Set("language", cfg.Language)
+	viper.Set("translation_language", cfg.TranslationLanguage)
 	viper.Set("cache_enabled", cfg.CacheEnabled)
 	viper.Set("cache_ttl_days", cfg.CacheTTLDays)
 
