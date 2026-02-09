@@ -19,6 +19,14 @@ func New(apiKey, model, translationLanguage string) (*Translator, error) {
 		return nil, fmt.Errorf("API key is required")
 	}
 
+	if model == "" {
+		return nil, fmt.Errorf("model is required")
+	}
+
+	if translationLanguage == "" {
+		return nil, fmt.Errorf("translation language is required")
+	}
+
 	return &Translator{
 		client:            openai.NewClient(apiKey),
 		model:             model,
@@ -34,6 +42,14 @@ func (t *Translator) buildPrompt(text string) string {
 }
 
 func (t *Translator) StreamTranslate(ctx context.Context, text string, onChunk func(string)) error {
+	if text == "" {
+		return fmt.Errorf("text cannot be empty")
+	}
+
+	if onChunk == nil {
+		return fmt.Errorf("onChunk callback cannot be nil")
+	}
+
 	req := openai.ChatCompletionRequest{
 		Model: t.model,
 		Messages: []openai.ChatCompletionMessage{
@@ -47,17 +63,26 @@ func (t *Translator) StreamTranslate(ctx context.Context, text string, onChunk f
 
 	stream, err := t.client.CreateChatCompletionStream(ctx, req)
 	if err != nil {
-		return fmt.Errorf("stream error: %w", err)
+		return fmt.Errorf("failed to create stream: %w", err)
 	}
-	defer stream.Close()
+	defer func() {
+		stream.Close() // Ignore close errors
+	}()
 
 	for {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled: %w", ctx.Err())
+		default:
+		}
+
 		response, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("stream recv error: %w", err)
+			return fmt.Errorf("stream receive error: %w", err)
 		}
 
 		if len(response.Choices) > 0 {
@@ -73,6 +98,10 @@ func (t *Translator) StreamTranslate(ctx context.Context, text string, onChunk f
 
 // Translate performs a non-streaming translation (fallback)
 func (t *Translator) Translate(ctx context.Context, text string) (string, error) {
+	if text == "" {
+		return "", fmt.Errorf("text cannot be empty")
+	}
+
 	req := openai.ChatCompletionRequest{
 		Model: t.model,
 		Messages: []openai.ChatCompletionMessage{
@@ -85,7 +114,7 @@ func (t *Translator) Translate(ctx context.Context, text string) (string, error)
 
 	resp, err := t.client.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("completion error: %w", err)
+		return "", fmt.Errorf("failed to create completion: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {

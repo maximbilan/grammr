@@ -20,9 +20,25 @@ func New(apiKey, model, mode, language string) (*Corrector, error) {
 		return nil, fmt.Errorf("API key is required")
 	}
 
+	if model == "" {
+		return nil, fmt.Errorf("model is required")
+	}
+
 	// Default to English if language is empty
 	if language == "" {
 		language = "english"
+	}
+
+	// Validate mode
+	validModes := map[string]bool{
+		"casual":    true,
+		"formal":    true,
+		"academic":  true,
+		"technical": true,
+	}
+	if mode != "" && !validModes[mode] {
+		// Default to casual for invalid modes
+		mode = "casual"
 	}
 
 	return &Corrector{
@@ -63,6 +79,14 @@ Only output the corrected text, nothing else.`,
 }
 
 func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func(string)) error {
+	if text == "" {
+		return fmt.Errorf("text cannot be empty")
+	}
+
+	if onChunk == nil {
+		return fmt.Errorf("onChunk callback cannot be nil")
+	}
+
 	req := openai.ChatCompletionRequest{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessage{
@@ -76,17 +100,26 @@ func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func
 
 	stream, err := c.client.CreateChatCompletionStream(ctx, req)
 	if err != nil {
-		return fmt.Errorf("stream error: %w", err)
+		return fmt.Errorf("failed to create stream: %w", err)
 	}
-	defer stream.Close()
+	defer func() {
+		stream.Close() // Ignore close errors
+	}()
 
 	for {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled: %w", ctx.Err())
+		default:
+		}
+
 		response, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("stream recv error: %w", err)
+			return fmt.Errorf("stream receive error: %w", err)
 		}
 
 		if len(response.Choices) > 0 {
@@ -102,6 +135,10 @@ func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func
 
 // Correct performs a non-streaming correction (fallback)
 func (c *Corrector) Correct(ctx context.Context, text string) (string, error) {
+	if text == "" {
+		return "", fmt.Errorf("text cannot be empty")
+	}
+
 	req := openai.ChatCompletionRequest{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessage{
@@ -114,7 +151,7 @@ func (c *Corrector) Correct(ctx context.Context, text string) (string, error) {
 
 	resp, err := c.client.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("completion error: %w", err)
+		return "", fmt.Errorf("failed to create completion: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
