@@ -61,7 +61,7 @@ var initCmd = &cobra.Command{
 		}
 
 		configPath := filepath.Join(home, ".grammr")
-		if err := os.MkdirAll(configPath, 0755); err != nil {
+		if err := os.MkdirAll(configPath, 0700); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

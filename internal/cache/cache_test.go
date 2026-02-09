@@ -164,8 +164,14 @@ func TestSetAndGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Generate proper hash from original text
+			hash := cache.Hash(tt.original)
+			if hash == "" {
+				t.Fatal("Hash() returned empty string")
+			}
+
 			// Test Set
-			err := cache.Set(tt.hash, tt.original, tt.corrected)
+			err := cache.Set(hash, tt.original, tt.corrected)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Set() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -173,7 +179,7 @@ func TestSetAndGet(t *testing.T) {
 
 			if !tt.wantErr {
 				// Verify file was created
-				path := filepath.Join(tmpDir, tt.hash+".json")
+				path := filepath.Join(tmpDir, hash+".json")
 				if _, err := os.Stat(path); os.IsNotExist(err) {
 					t.Errorf("Set() cache file was not created: %v", path)
 					return
@@ -192,8 +198,8 @@ func TestSetAndGet(t *testing.T) {
 					return
 				}
 
-				if entry.Hash != tt.hash {
-					t.Errorf("Set() entry.Hash = %v, want %v", entry.Hash, tt.hash)
+				if entry.Hash != hash {
+					t.Errorf("Set() entry.Hash = %v, want %v", entry.Hash, hash)
 				}
 				if entry.Original != tt.original {
 					t.Errorf("Set() entry.Original = %v, want %v", entry.Original, tt.original)
@@ -206,7 +212,7 @@ func TestSetAndGet(t *testing.T) {
 				}
 
 				// Test Get
-				got := cache.Get(tt.hash)
+				got := cache.Get(hash)
 				if got != tt.corrected {
 					t.Errorf("Get() = %v, want %v", got, tt.corrected)
 				}
@@ -236,9 +242,9 @@ func TestGetExpired(t *testing.T) {
 		ttl: 1 * time.Hour, // 1 hour TTL
 	}
 
-	hash := "expired-hash"
 	original := "Hello world"
 	corrected := "Hello, world"
+	hash := cache.Hash(original)
 
 	// Create an expired entry manually
 	entry := CacheEntry{
@@ -254,7 +260,7 @@ func TestGetExpired(t *testing.T) {
 	}
 
 	path := filepath.Join(tmpDir, hash+".json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatalf("Failed to write cache file: %v", err)
 	}
 
@@ -277,9 +283,9 @@ func TestGetNotExpired(t *testing.T) {
 		ttl: 24 * time.Hour,
 	}
 
-	hash := "valid-hash"
 	original := "Hello world"
 	corrected := "Hello, world"
+	hash := cache.Hash(original)
 
 	// Create a valid (not expired) entry manually
 	entry := CacheEntry{
@@ -295,7 +301,7 @@ func TestGetNotExpired(t *testing.T) {
 	}
 
 	path := filepath.Join(tmpDir, hash+".json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatalf("Failed to write cache file: %v", err)
 	}
 
@@ -318,11 +324,12 @@ func TestGetInvalidJSON(t *testing.T) {
 		ttl: 24 * time.Hour,
 	}
 
-	hash := "invalid-json-hash"
+	// Use a valid hash format (64 hex chars) but with invalid JSON content
+	hash := cache.Hash("test text")
 	path := filepath.Join(tmpDir, hash+".json")
 
 	// Write invalid JSON
-	if err := os.WriteFile(path, []byte("invalid json"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("invalid json"), 0600); err != nil {
 		t.Fatalf("Failed to write invalid JSON file: %v", err)
 	}
 

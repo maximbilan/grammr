@@ -4,8 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
+)
+
+const (
+	// ConfigDirPerm is the permission for the config directory (0700 = rwx------)
+	// Restrictive permissions protect the directory from being accessed by other users
+	ConfigDirPerm os.FileMode = 0700
+	// ConfigFilePerm is the permission for the config file (0600 = rw-------)
+	// Restrictive permissions protect the API key from being read by other users
+	ConfigFilePerm os.FileMode = 0600
 )
 
 type Config struct {
@@ -46,12 +56,14 @@ func Load() (*Config, error) {
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			// Config file not found; create directory
-			if err := os.MkdirAll(configPath, 0755); err != nil {
+			if err := os.MkdirAll(configPath, ConfigDirPerm); err != nil {
 				return nil, fmt.Errorf("failed to create config directory: %w", err)
 			}
 			// Return config with defaults
 			config := &Config{}
-			viper.Unmarshal(config)
+			if err := viper.Unmarshal(config); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal default config: %w", err)
+			}
 			return config, nil
 		}
 		return nil, fmt.Errorf("failed to read config: %w", err)
@@ -72,7 +84,7 @@ func Save(cfg *Config) error {
 	}
 
 	configPath := filepath.Join(home, ".grammr")
-	if err := os.MkdirAll(configPath, 0755); err != nil {
+	if err := os.MkdirAll(configPath, ConfigDirPerm); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -89,43 +101,78 @@ func Save(cfg *Config) error {
 	viper.Set("cache_ttl_days", cfg.CacheTTLDays)
 
 	configFile := filepath.Join(configPath, "config.yaml")
-	return viper.WriteConfigAs(configFile)
+	if err := viper.WriteConfigAs(configFile); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	// Set restrictive permissions on the config file to protect API key
+	if err := os.Chmod(configFile, ConfigFilePerm); err != nil {
+		return fmt.Errorf("failed to set config file permissions: %w", err)
+	}
+
+	return nil
 }
 
 func Set(key, value string) error {
+	if key == "" {
+		return fmt.Errorf("config key cannot be empty")
+	}
+
+	// Sanitize key to prevent injection
+	key = strings.TrimSpace(key)
+	if strings.ContainsAny(key, " \t\n\r") {
+		return fmt.Errorf("config key contains invalid characters")
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	configPath := filepath.Join(home, ".grammr")
+	if err := os.MkdirAll(configPath, ConfigDirPerm); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configPath)
 
-	// Try to read existing config
-	viper.ReadInConfig()
+	// Try to read existing config (ignore error if file doesn't exist)
+	_ = viper.ReadInConfig()
 
 	viper.Set(key, value)
 
 	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {
-		// If file doesn't exist, create it
-		if err := os.MkdirAll(configPath, 0755); err != nil {
-			return fmt.Errorf("failed to create config directory: %w", err)
+		// If file doesn't exist, try SafeWriteConfigAs
+		if err := viper.SafeWriteConfigAs(configFile); err != nil {
+			return fmt.Errorf("failed to write config file: %w", err)
 		}
-		return viper.SafeWriteConfigAs(configFile)
+	}
+
+	// Set restrictive permissions on the config file to protect API key
+	if err := os.Chmod(configFile, ConfigFilePerm); err != nil {
+		return fmt.Errorf("failed to set config file permissions: %w", err)
 	}
 
 	return nil
 }
 
 func Get(key string) interface{} {
-	home, _ := os.UserHomeDir()
+	if key == "" {
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
 	configPath := filepath.Join(home, ".grammr")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configPath)
-	viper.ReadInConfig()
+	_ = viper.ReadInConfig() // Ignore error if config doesn't exist
 	return viper.Get(key)
 }
