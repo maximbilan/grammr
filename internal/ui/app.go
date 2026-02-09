@@ -14,6 +14,7 @@ import (
 	"github.com/maximbilan/grammr/internal/clipboard"
 	"github.com/maximbilan/grammr/internal/config"
 	"github.com/maximbilan/grammr/internal/corrector"
+	"github.com/maximbilan/grammr/internal/translator"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -28,6 +29,7 @@ const (
 	ModeGlobal Mode = iota
 	ModeEditOriginal
 	ModeEditCorrected
+	ModeEditTranslation
 	ModeHelp
 	ModeReviewDiff
 )
@@ -42,20 +44,23 @@ type DiffChange struct {
 
 type Model struct {
 	// State
-	mode          Mode
-	originalText  string
-	correctedText string
+	mode            Mode
+	originalText    string
+	correctedText   string
+	translatedText  string
 
 	// UI Components
-	originalEditor  textarea.Model
-	correctedEditor textarea.Model
-	viewport        viewport.Model
+	originalEditor    textarea.Model
+	correctedEditor   textarea.Model
+	translationEditor textarea.Model
+	viewport          viewport.Model
 
 	// State flags
-	isLoading bool
-	showDiff  bool
-	error     string
-	status    string
+	isLoading      bool
+	isTranslating  bool
+	showDiff       bool
+	error          string
+	status         string
 
 	// Diff review state
 	diffChanges   []DiffChange // All changes from the diff
@@ -63,9 +68,10 @@ type Model struct {
 	reviewedText  string       // Final text built from applied changes
 
 	// Services
-	corrector *corrector.Corrector
-	cache     *cache.Cache
-	config    *config.Config
+	corrector  *corrector.Corrector
+	translator *translator.Translator
+	cache      *cache.Cache
+	config     *config.Config
 
 	// Dimensions
 	width  int
@@ -80,6 +86,14 @@ type textPastedMsg struct {
 type correctionDoneMsg struct {
 	original  string
 	corrected string
+}
+
+type translationDoneMsg struct {
+	translated string
+}
+
+type translationChunkMsg struct {
+	chunk string
 }
 
 type streamChunkMsg struct {
@@ -289,6 +303,14 @@ func NewModel(cfg *config.Config) (*Model, error) {
 		return nil, fmt.Errorf("failed to create corrector: %w", err)
 	}
 
+	var trans *translator.Translator
+	if cfg.TranslationLanguage != "" {
+		trans, err = translator.New(cfg.APIKey, cfg.Model, cfg.TranslationLanguage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create translator: %w", err)
+		}
+	}
+
 	originalEditor := textarea.New()
 	originalEditor.Placeholder = "Original text will appear here..."
 	originalEditor.CharLimit = 0
@@ -301,18 +323,26 @@ func NewModel(cfg *config.Config) (*Model, error) {
 	correctedEditor.SetWidth(80)
 	correctedEditor.SetHeight(10)
 
+	translationEditor := textarea.New()
+	translationEditor.Placeholder = "Translation will appear here..."
+	translationEditor.CharLimit = 0
+	translationEditor.SetWidth(80)
+	translationEditor.SetHeight(10)
+
 	vp := viewport.New(80, 20)
 
 	return &Model{
-		mode:            ModeGlobal,
-		originalEditor:  originalEditor,
-		correctedEditor: correctedEditor,
-		viewport:        vp,
-		showDiff:        cfg.ShowDiff,
-		corrector:       cor,
-		cache:           c,
-		config:          cfg,
-		status:          "Ready. Press V to paste, C to copy, ? for help",
+		mode:             ModeGlobal,
+		originalEditor:   originalEditor,
+		correctedEditor:  correctedEditor,
+		translationEditor: translationEditor,
+		viewport:         vp,
+		showDiff:         cfg.ShowDiff,
+		corrector:        cor,
+		translator:       trans,
+		cache:            c,
+		config:           cfg,
+		status:           "Ready. Press V to paste, C to copy, ? for help",
 	}, nil
 }
 
@@ -339,6 +369,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.originalEditor.SetHeight(editorHeight)
 		m.correctedEditor.SetWidth(editorWidth)
 		m.correctedEditor.SetHeight(editorHeight)
+		m.translationEditor.SetWidth(editorWidth)
+		m.translationEditor.SetHeight(editorHeight)
 		m.viewport.Width = editorWidth
 		m.viewport.Height = msg.Height - 10
 		return m, nil
@@ -356,7 +388,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleReviewMode(msg)
 		}
 
-		if m.mode == ModeEditOriginal || m.mode == ModeEditCorrected {
+		if m.mode == ModeEditOriginal || m.mode == ModeEditCorrected || m.mode == ModeEditTranslation {
 			return m.handleEditMode(msg)
 		}
 
@@ -369,7 +401,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.originalEditor.SetValue(trimmedText)
 		m.correctedText = ""
 		m.correctedEditor.SetValue("")
+		m.translatedText = ""
+		m.translationEditor.SetValue("")
 		m.isLoading = true
+		m.isTranslating = false
 		m.status = "[●] Correcting..."
 		// Start async correction
 		return m, m.streamCorrection(trimmedText)
@@ -381,7 +416,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.originalEditor.SetValue(trimmedText)
 		m.correctedText = ""
 		m.correctedEditor.SetValue("")
+		m.translatedText = ""
+		m.translationEditor.SetValue("")
 		m.isLoading = true
+		m.isTranslating = false
 		m.status = "[●] Correcting..."
 		return m, m.streamCorrection(trimmedText)
 
@@ -399,6 +437,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			clipboard.Copy(trimmedCorrected)
 			m.status = "✓ Done (copied)"
 		}
+		// Trigger translation if translator is configured
+		if m.translator != nil && trimmedCorrected != "" {
+			m.isTranslating = true
+			m.status = "✓ Done [●] Translating..."
+			return m, m.streamTranslation(trimmedCorrected)
+		}
+		return m, nil
+
+	case translationDoneMsg:
+		trimmedTranslated := trimTrailingWhitespace(msg.translated)
+		m.translatedText = trimmedTranslated
+		m.translationEditor.SetValue(trimmedTranslated)
+		m.isTranslating = false
+		if m.status == "✓ Done [●] Translating..." {
+			m.status = "✓ Done ✓ Translated"
+		}
+		return m, nil
+
+	case translationChunkMsg:
+		m.translatedText += msg.chunk
+		m.translationEditor.SetValue(m.translatedText)
 		return m, nil
 
 	case streamChunkMsg:
@@ -446,9 +505,20 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textarea.Blink
 		}
 		return m, nil
+	case "t", "T":
+		if m.translatedText != "" {
+			if err := clipboard.Copy(m.translatedText); err != nil {
+				return m, tea.Printf("Failed to copy: %v", err)
+			}
+			m.status = "✓ Translation copied to clipboard"
+		}
+		return m, nil
 	case "r", "R":
 		if m.originalText != "" {
 			m.isLoading = true
+			m.isTranslating = false
+			m.translatedText = ""
+			m.translationEditor.SetValue("")
 			m.status = "[●] Correcting..."
 			return m, m.correctText(m.originalText)
 		}
@@ -536,9 +606,12 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.originalText = trimTrailingWhitespace(m.originalEditor.Value())
 		} else if currentMode == ModeEditCorrected {
 			m.correctedText = trimTrailingWhitespace(m.correctedEditor.Value())
+		} else if currentMode == ModeEditTranslation {
+			m.translatedText = trimTrailingWhitespace(m.translationEditor.Value())
 		}
 		m.originalEditor.Blur()
 		m.correctedEditor.Blur()
+		m.translationEditor.Blur()
 		return m, nil
 	case "ctrl+s":
 		if m.mode == ModeEditOriginal {
@@ -559,6 +632,10 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	} else if m.mode == ModeEditCorrected {
 		var cmd tea.Cmd
 		m.correctedEditor, cmd = m.correctedEditor.Update(msg)
+		return m, cmd
+	} else if m.mode == ModeEditTranslation {
+		var cmd tea.Cmd
+		m.translationEditor, cmd = m.translationEditor.Update(msg)
 		return m, cmd
 	}
 
@@ -738,6 +815,34 @@ func (m Model) correctText(text string) tea.Cmd {
 	}
 }
 
+func (m Model) streamTranslation(text string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			return statusMsg("[●] Translating...")
+		},
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			translated := ""
+			err := m.translator.StreamTranslate(ctx, text, func(chunk string) {
+				translated += chunk
+			})
+
+			if err != nil {
+				return errMsg{err: err}
+			}
+
+			// Trim trailing whitespace from translated text
+			trimmedTranslated := trimTrailingWhitespace(translated)
+
+			return translationDoneMsg{
+				translated: trimmedTranslated,
+			}
+		},
+	)
+}
+
 func (m Model) View() string {
 	if m.mode == ModeHelp {
 		return m.renderHelp()
@@ -776,7 +881,7 @@ func (m Model) View() string {
 	}
 
 	// Build header components
-	headerLeft := headerStyle.Render("grammr v1.0") + " " + modeIndicator
+	headerLeft := headerStyle.Render("grammr v1.0.1") + " " + modeIndicator
 	if headerLoadingIndicator != "" {
 		headerLeft += " " + headerLoadingIndicator
 	}
@@ -822,13 +927,22 @@ func (m Model) View() string {
 		if boxWidth < 20 {
 			boxWidth = 20
 		}
-		// Account for: header (1-2 lines), separator (1), spacing (1), labels (2), spacing between boxes (1), separator (1), footer (1-2)
-		// Total: ~9-11 lines for fixed content
-		availableHeight := m.height - 11
-		if availableHeight < 10 {
-			availableHeight = m.height - 9 // Minimum space for very small terminals
+		// Account for: header (1-2 lines), separator (1), spacing (1), labels (3 if translation enabled, else 2), spacing between boxes (2 if translation, else 1), separator (1), footer (1-2)
+		// Total: ~12-14 lines for fixed content with translation, ~9-11 without
+		hasTranslation := m.translator != nil
+		fixedLines := 11
+		if hasTranslation {
+			fixedLines = 14
 		}
-		boxHeight := availableHeight / 2
+		availableHeight := m.height - fixedLines
+		if availableHeight < 10 {
+			availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
+		}
+		numBoxes := 2
+		if hasTranslation {
+			numBoxes = 3
+		}
+		boxHeight := availableHeight / numBoxes
 		if boxHeight < 3 {
 			boxHeight = 3 // Minimum box height
 		}
@@ -865,13 +979,20 @@ func (m Model) View() string {
 		if boxWidth < 20 {
 			boxWidth = 20
 		}
-		// Account for: header (1-2 lines), separator (1), spacing (1), labels (2), spacing between boxes (1), separator (1), footer (1-2)
-		// Total: ~9-11 lines for fixed content
-		availableHeight := m.height - 11
-		if availableHeight < 10 {
-			availableHeight = m.height - 9 // Minimum space for very small terminals
+		hasTranslation := m.translator != nil
+		fixedLines := 11
+		if hasTranslation {
+			fixedLines = 14
 		}
-		boxHeight := availableHeight / 2
+		availableHeight := m.height - fixedLines
+		if availableHeight < 10 {
+			availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
+		}
+		numBoxes := 2
+		if hasTranslation {
+			numBoxes = 3
+		}
+		boxHeight := availableHeight / numBoxes
 		if boxHeight < 3 {
 			boxHeight = 3 // Minimum box height
 		}
@@ -900,6 +1021,70 @@ func (m Model) View() string {
 	}
 	s.WriteString("\n\n")
 
+	// Translation text (only show if translator is configured)
+	if m.translator != nil {
+		translationLabelStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("5"))
+
+		translationLoadingIndicator := ""
+		if m.isTranslating {
+			translationLoadingIndicator = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11")).
+				Render(" [●] Translating...")
+		}
+
+		translationLabel := translationLabelStyle.Render("Translation") + translationLoadingIndicator
+
+		s.WriteString(translationLabel)
+		s.WriteString("\n")
+		if m.mode == ModeEditTranslation {
+			s.WriteString(m.translationEditor.View())
+		} else {
+			boxWidth := m.width - 4
+			if boxWidth < 20 {
+				boxWidth = 20
+			}
+			hasTranslation := m.translator != nil
+			fixedLines := 11
+			if hasTranslation {
+				fixedLines = 14
+			}
+			availableHeight := m.height - fixedLines
+			if availableHeight < 10 {
+				availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
+			}
+			numBoxes := 2
+			if hasTranslation {
+				numBoxes = 3
+			}
+			boxHeight := availableHeight / numBoxes
+			if boxHeight < 3 {
+				boxHeight = 3 // Minimum box height
+			}
+			boxStyle := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("8")).
+				Padding(1, 2).
+				Width(boxWidth).
+				Height(boxHeight)
+
+			content := m.translatedText
+
+			// Show loading indicator in the box if translating
+			if m.isTranslating && content == "" {
+				loadingText := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("11")).
+					Italic(true).
+					Render("Translating...")
+				content = loadingText
+			}
+
+			s.WriteString(boxStyle.Render(content))
+		}
+		s.WriteString("\n\n")
+	}
+
 	// Footer
 	footerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")).
@@ -910,6 +1095,9 @@ func (m Model) View() string {
 
 	// Build footer with mode shortcuts - always compact
 	mainFooterText := "V: Paste  C: Copy  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help"
+	if m.translator != nil {
+		mainFooterText = "V: Paste  C: Copy  T: Copy Translation  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help"
+	}
 	mainFooter := footerStyle.Render(mainFooterText)
 	modeShortcutsWidth := lipgloss.Width(modeShortcuts)
 	mainFooterWidth := lipgloss.Width(mainFooter)
@@ -1340,6 +1528,9 @@ func (m Model) renderHelp() string {
 	content.WriteString("\n")
 	content.WriteString("  V, v      Paste from clipboard\n")
 	content.WriteString("  C, c      Copy corrected text\n")
+	if m.translator != nil {
+		content.WriteString("  T, t      Copy translation\n")
+	}
 	content.WriteString("  E, e      Edit corrected text\n")
 	content.WriteString("  O, o      Edit original text\n")
 	content.WriteString("  R, r      Retry correction\n")

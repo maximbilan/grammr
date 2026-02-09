@@ -9,6 +9,7 @@
 - **Fast**: Sub-3-second workflow from copy to paste
 - **Keyboard-only**: Vim-inspired keybindings
 - **AI-powered**: GPT-4o quality beats rule-based checkers
+- **Translation**: Built-in AI translation to any language
 - **Offline cache**: Already-checked text loads instantly
 - **Beautiful**: Colorful diffs, clean interface
 - **Private**: Runs locally, API calls only for corrections
@@ -80,6 +81,11 @@ Optional: Set language (default: english)
 grammr config set language spanish  # For Spanish text correction
 ```
 
+Optional: Enable translation to a target language
+```bash
+grammr config set translation_language french  # Translate corrected text to French
+```
+
 ## Usage
 
 1. Copy text from anywhere (Cmd+C / Ctrl+C)
@@ -98,6 +104,7 @@ That's it! 🎉
 |-----|--------|
 | `V` | Paste from clipboard |
 | `C` | Copy corrected text |
+| `T` | Copy translation (if translation enabled) |
 | `E` | Edit corrected text |
 | `O` | Edit original text |
 | `R` | Retry correction |
@@ -137,6 +144,7 @@ api_key: "sk-..."
 model: "gpt-4o"  # or gpt-4o-mini
 mode: "casual"
 language: "english"  # Default: english. Options: english, spanish, french, german, etc.
+translation_language: ""  # Optional: Translate corrected text to this language (e.g., "spanish", "french", "german")
 cache_enabled: true
 cache_ttl_days: 7
 show_diff: true
@@ -147,7 +155,9 @@ Or use the CLI:
 ```bash
 grammr config set model gpt-4o-mini
 grammr config set language spanish
+grammr config set translation_language french
 grammr config get language
+grammr config get translation_language
 ```
 
 ## Model Comparison
@@ -182,6 +192,18 @@ grammr
 # Press Esc when done
 ```
 
+**Use translation:**
+```bash
+# First, configure translation language
+grammr config set translation_language spanish
+
+# Then use grammr normally
+grammr
+# Press V to paste
+# After correction completes, translation appears automatically
+# Press T to copy translation
+```
+
 **Clear cache:**
 ```bash
 rm -rf ~/.grammr/cache/
@@ -195,6 +217,7 @@ grammr config init
 ## Features
 
 - ✅ Real-time streaming corrections
+- ✅ AI-powered translation to any language
 - ✅ Smart caching (hash-based, configurable TTL)
 - ✅ Beautiful colored diffs
 - ✅ Word-by-word change review mode
@@ -236,7 +259,6 @@ The project includes comprehensive unit tests covering:
 - [ ] Support for Anthropic Claude (in addition to OpenAI)
 - [ ] Custom system prompts
 - [ ] Plugin system for custom corrections
-- [ ] Multi-language support
 - [ ] Batch file processing
 
 ## Contributing

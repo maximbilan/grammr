@@ -51,6 +51,9 @@ func TestLoad(t *testing.T) {
 		if cfg.Language != "english" {
 			t.Errorf("Load() Language = %v, want english", cfg.Language)
 		}
+		if cfg.TranslationLanguage != "" {
+			t.Errorf("Load() TranslationLanguage = %v, want empty string", cfg.TranslationLanguage)
+		}
 
 		// Verify config directory was created
 		configPath := filepath.Join(tmpDir, ".grammr")
@@ -75,6 +78,7 @@ show_diff: false
 mode: formal
 cache_enabled: false
 cache_ttl_days: 14
+translation_language: spanish
 `
 		if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
 			t.Fatalf("Failed to write config file: %v", err)
@@ -109,6 +113,9 @@ cache_ttl_days: 14
 		}
 		if cfg.CacheTTLDays != 14 {
 			t.Errorf("Load() CacheTTLDays = %v, want 14", cfg.CacheTTLDays)
+		}
+		if cfg.TranslationLanguage != "spanish" {
+			t.Errorf("Load() TranslationLanguage = %v, want spanish", cfg.TranslationLanguage)
 		}
 	})
 }
@@ -198,6 +205,9 @@ func TestSave(t *testing.T) {
 		if tt.cfg.Language != "" && loaded.Language != tt.cfg.Language {
 			t.Errorf("Save() Language = %v, want %v", loaded.Language, tt.cfg.Language)
 		}
+		if tt.cfg.TranslationLanguage != "" && loaded.TranslationLanguage != tt.cfg.TranslationLanguage {
+			t.Errorf("Save() TranslationLanguage = %v, want %v", loaded.TranslationLanguage, tt.cfg.TranslationLanguage)
+		}
 		})
 	}
 }
@@ -231,6 +241,11 @@ func TestSet(t *testing.T) {
 			name:  "set mode",
 			key:   "mode",
 			value: "technical",
+		},
+		{
+			name:  "set translation_language",
+			key:   "translation_language",
+			value: "french",
 		},
 	}
 
