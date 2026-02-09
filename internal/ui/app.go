@@ -881,7 +881,7 @@ func (m Model) View() string {
 	}
 
 	// Build header components
-	headerLeft := headerStyle.Render("grammr v1.0") + " " + modeIndicator
+	headerLeft := headerStyle.Render("grammr v1.0.1") + " " + modeIndicator
 	if headerLoadingIndicator != "" {
 		headerLeft += " " + headerLoadingIndicator
 	}
