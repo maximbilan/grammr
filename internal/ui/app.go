@@ -542,7 +542,13 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
-		m.status = "Mode: Casual"
+		// Save mode to config file
+		if err := config.Save(m.config); err != nil {
+			// Log error but don't fail - mode is still changed in memory
+			m.status = "Mode: Casual (config save failed)"
+		} else {
+			m.status = "Mode: Casual"
+		}
 		return m, nil
 	case "2":
 		m.config.Mode = "formal"
@@ -552,7 +558,13 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
-		m.status = "Mode: Formal"
+		// Save mode to config file
+		if err := config.Save(m.config); err != nil {
+			// Log error but don't fail - mode is still changed in memory
+			m.status = "Mode: Formal (config save failed)"
+		} else {
+			m.status = "Mode: Formal"
+		}
 		return m, nil
 	case "3":
 		m.config.Mode = "academic"
@@ -562,7 +574,13 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
-		m.status = "Mode: Academic"
+		// Save mode to config file
+		if err := config.Save(m.config); err != nil {
+			// Log error but don't fail - mode is still changed in memory
+			m.status = "Mode: Academic (config save failed)"
+		} else {
+			m.status = "Mode: Academic"
+		}
 		return m, nil
 	case "4":
 		m.config.Mode = "technical"
@@ -572,7 +590,13 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
-		m.status = "Mode: Technical"
+		// Save mode to config file
+		if err := config.Save(m.config); err != nil {
+			// Log error but don't fail - mode is still changed in memory
+			m.status = "Mode: Technical (config save failed)"
+		} else {
+			m.status = "Mode: Technical"
+		}
 		return m, nil
 	}
 
