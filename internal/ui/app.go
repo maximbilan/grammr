@@ -24,6 +24,22 @@ func trimTrailingWhitespace(text string) string {
 	return strings.TrimRight(text, " \t\n\r")
 }
 
+// createRateLimiter creates a rate limiter from config, or returns nil if disabled
+func createRateLimiter(cfg *config.Config) *ratelimit.RateLimiter {
+	if !cfg.RateLimitEnabled {
+		return nil
+	}
+	maxRequests := cfg.RateLimitRequests
+	if maxRequests <= 0 {
+		maxRequests = 60 // Default
+	}
+	windowSeconds := cfg.RateLimitWindow
+	if windowSeconds <= 0 {
+		windowSeconds = 60 // Default: per minute
+	}
+	return ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
+}
+
 type Mode int
 
 const (
@@ -300,18 +316,7 @@ func NewModel(cfg *config.Config) (*Model, error) {
 	}
 
 	// Create rate limiter if enabled
-	var rateLimiter *ratelimit.RateLimiter
-	if cfg.RateLimitEnabled {
-		maxRequests := cfg.RateLimitRequests
-		if maxRequests <= 0 {
-			maxRequests = 60 // Default
-		}
-		windowSeconds := cfg.RateLimitWindow
-		if windowSeconds <= 0 {
-			windowSeconds = 60 // Default: per minute
-		}
-		rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
-	}
+	rateLimiter := createRateLimiter(cfg)
 
 	cor, err := corrector.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.Mode, cfg.Language, rateLimiter)
 	if err != nil {
@@ -573,18 +578,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "1":
 		m.config.Mode = "casual"
-		var rateLimiter *ratelimit.RateLimiter
-		if m.config.RateLimitEnabled {
-			maxRequests := m.config.RateLimitRequests
-			if maxRequests <= 0 {
-				maxRequests = 60
-			}
-			windowSeconds := m.config.RateLimitWindow
-			if windowSeconds <= 0 {
-				windowSeconds = 60
-			}
-			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
-		}
+		rateLimiter := createRateLimiter(m.config)
 		var err error
 		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "casual", m.config.Language, rateLimiter)
 		if err != nil {
@@ -594,18 +588,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "2":
 		m.config.Mode = "formal"
-		var rateLimiter *ratelimit.RateLimiter
-		if m.config.RateLimitEnabled {
-			maxRequests := m.config.RateLimitRequests
-			if maxRequests <= 0 {
-				maxRequests = 60
-			}
-			windowSeconds := m.config.RateLimitWindow
-			if windowSeconds <= 0 {
-				windowSeconds = 60
-			}
-			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
-		}
+		rateLimiter := createRateLimiter(m.config)
 		var err error
 		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "formal", m.config.Language, rateLimiter)
 		if err != nil {
@@ -615,18 +598,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "3":
 		m.config.Mode = "academic"
-		var rateLimiter *ratelimit.RateLimiter
-		if m.config.RateLimitEnabled {
-			maxRequests := m.config.RateLimitRequests
-			if maxRequests <= 0 {
-				maxRequests = 60
-			}
-			windowSeconds := m.config.RateLimitWindow
-			if windowSeconds <= 0 {
-				windowSeconds = 60
-			}
-			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
-		}
+		rateLimiter := createRateLimiter(m.config)
 		var err error
 		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "academic", m.config.Language, rateLimiter)
 		if err != nil {
@@ -636,18 +608,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "4":
 		m.config.Mode = "technical"
-		var rateLimiter *ratelimit.RateLimiter
-		if m.config.RateLimitEnabled {
-			maxRequests := m.config.RateLimitRequests
-			if maxRequests <= 0 {
-				maxRequests = 60
-			}
-			windowSeconds := m.config.RateLimitWindow
-			if windowSeconds <= 0 {
-				windowSeconds = 60
-			}
-			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
-		}
+		rateLimiter := createRateLimiter(m.config)
 		var err error
 		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "technical", m.config.Language, rateLimiter)
 		if err != nil {
@@ -823,7 +784,11 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 			return statusMsg("[●] Correcting...")
 		},
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			timeoutSeconds := m.config.RequestTimeoutSeconds
+			if timeoutSeconds <= 0 {
+				timeoutSeconds = 30 // Default fallback
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 			defer cancel()
 
 			corrected := ""
@@ -838,10 +803,13 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 			// Trim trailing whitespace from corrected text
 			trimmedCorrected := trimTrailingWhitespace(corrected)
 
-			// Save to cache
+			// Save to cache (handle errors gracefully - don't fail correction if cache fails)
 			if m.cache != nil {
 				hash := m.cache.Hash(text)
-				m.cache.Set(hash, text, trimmedCorrected)
+				if err := m.cache.Set(hash, text, trimmedCorrected); err != nil {
+					// Cache write failed, but correction succeeded
+					// We'll return the correction normally, but could log this in the future
+				}
 			}
 
 			return correctionDoneMsg{
@@ -854,7 +822,11 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 
 func (m Model) correctText(text string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		timeoutSeconds := m.config.RequestTimeoutSeconds
+		if timeoutSeconds <= 0 {
+			timeoutSeconds = 30 // Default fallback
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 		defer cancel()
 
 		corrected, err := m.corrector.Correct(ctx, text)
@@ -865,10 +837,13 @@ func (m Model) correctText(text string) tea.Cmd {
 		// Trim trailing whitespace from corrected text
 		trimmedCorrected := trimTrailingWhitespace(corrected)
 
-		// Save to cache
+		// Save to cache (handle errors gracefully - don't fail correction if cache fails)
 		if m.cache != nil {
 			hash := m.cache.Hash(text)
-			m.cache.Set(hash, text, trimmedCorrected)
+			if err := m.cache.Set(hash, text, trimmedCorrected); err != nil {
+				// Cache write failed, but correction succeeded
+				// We'll return the correction normally, but could log this in the future
+			}
 		}
 
 		return correctionDoneMsg{
@@ -884,7 +859,11 @@ func (m Model) streamTranslation(text string) tea.Cmd {
 			return statusMsg("[●] Translating...")
 		},
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			timeoutSeconds := m.config.RequestTimeoutSeconds
+			if timeoutSeconds <= 0 {
+				timeoutSeconds = 30 // Default fallback
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 			defer cancel()
 
 			translated := ""

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/maximbilan/grammr/internal/ratelimit"
 	"github.com/sashabaranov/go-openai"
@@ -27,10 +28,26 @@ func New(apiKey, model, mode, language string) (*Corrector, error) {
 	return NewWithRateLimit(apiKey, model, mode, language, nil)
 }
 
+// validateAPIKey validates the format of an OpenAI API key
+func validateAPIKey(apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("API key is required")
+	}
+	// OpenAI API keys typically start with "sk-" and are 51 characters long
+	// But we'll be lenient: at least 20 chars and starts with "sk-"
+	if len(apiKey) < 20 {
+		return fmt.Errorf("API key appears to be invalid (too short)")
+	}
+	if !strings.HasPrefix(apiKey, "sk-") {
+		return fmt.Errorf("API key must start with 'sk-'")
+	}
+	return nil
+}
+
 // NewWithRateLimit creates a new Corrector with an optional rate limiter
 func NewWithRateLimit(apiKey, model, mode, language string, rateLimiter *ratelimit.RateLimiter) (*Corrector, error) {
-	if apiKey == "" {
-		return nil, fmt.Errorf("API key is required")
+	if err := validateAPIKey(apiKey); err != nil {
+		return nil, err
 	}
 
 	if model == "" {

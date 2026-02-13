@@ -32,6 +32,7 @@ type Config struct {
 	RateLimitEnabled  bool   `mapstructure:"rate_limit_enabled"`
 	RateLimitRequests int    `mapstructure:"rate_limit_requests"`
 	RateLimitWindow   int    `mapstructure:"rate_limit_window_seconds"`
+	RequestTimeoutSeconds int `mapstructure:"request_timeout_seconds"`
 }
 
 func Load() (*Config, error) {
@@ -57,6 +58,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("rate_limit_enabled", true)
 	viper.SetDefault("rate_limit_requests", 60)      // 60 requests
 	viper.SetDefault("rate_limit_window_seconds", 60) // per minute
+	viper.SetDefault("request_timeout_seconds", 30)   // 30 seconds default timeout
 
 	// Try to read config
 	if err := viper.ReadInConfig(); err != nil {
@@ -108,6 +110,7 @@ func Save(cfg *Config) error {
 	viper.Set("rate_limit_enabled", cfg.RateLimitEnabled)
 	viper.Set("rate_limit_requests", cfg.RateLimitRequests)
 	viper.Set("rate_limit_window_seconds", cfg.RateLimitWindow)
+	viper.Set("request_timeout_seconds", cfg.RequestTimeoutSeconds)
 
 	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {

@@ -16,7 +16,7 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			name:     "valid corrector",
-			apiKey:   "test-api-key",
+			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
 			mode:     "casual",
 			language: "english",
@@ -31,8 +31,24 @@ func TestNew(t *testing.T) {
 			wantErr:  true,
 		},
 		{
+			name:     "invalid API key (too short)",
+			apiKey:   "sk-short",
+			model:    "gpt-4o",
+			mode:     "casual",
+			language: "english",
+			wantErr:  true,
+		},
+		{
+			name:     "invalid API key (wrong prefix)",
+			apiKey:   "invalid-key-123456789012345678901234567890",
+			model:    "gpt-4o",
+			mode:     "casual",
+			language: "english",
+			wantErr:  true,
+		},
+		{
 			name:     "different model",
-			apiKey:   "test-api-key",
+			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-3.5-turbo",
 			mode:     "formal",
 			language: "english",
@@ -40,7 +56,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:     "different mode",
-			apiKey:   "test-api-key",
+			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
 			mode:     "academic",
 			language: "english",
@@ -48,7 +64,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:     "empty language defaults to english",
-			apiKey:   "test-api-key",
+			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
 			mode:     "casual",
 			language: "",
@@ -56,7 +72,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:     "non-english language",
-			apiKey:   "test-api-key",
+			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
 			mode:     "casual",
 			language: "spanish",
@@ -169,7 +185,7 @@ func TestBuildPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New("test-api-key", "gpt-4o", tt.mode, "english")
+			corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", tt.mode, "english")
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -220,7 +236,7 @@ func TestBuildPromptModeSpecificity(t *testing.T) {
 	prompts := make(map[string]string)
 
 	for _, mode := range modes {
-		corrector, err := New("test-api-key", "gpt-4o", mode, "english")
+		corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", mode, "english")
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
@@ -267,7 +283,7 @@ func TestBuildPromptWithLanguage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New("test-api-key", "gpt-4o", "casual", tt.language)
+			corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", "casual", tt.language)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
