@@ -3,12 +3,14 @@ package corrector
 import (
 	"strings"
 	"testing"
+
+	"github.com/maximbilan/grammr/internal/provider"
 )
 
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name     string
-		apiKey   string
+		provider provider.Provider
 		model    string
 		style    string
 		language string
@@ -16,47 +18,39 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			name:     "valid corrector",
-			apiKey:   "sk-test1234567890123456789012345678901234567890",
+			provider: provider.NewMockProvider(),
 			model:    "gpt-4o",
 			style:    "casual",
 			language: "english",
 			wantErr:  false,
 		},
 		{
-			name:     "empty API key",
-			apiKey:   "",
+			name:     "nil provider",
+			provider: nil,
 			model:    "gpt-4o",
 			style:    "casual",
 			language: "english",
 			wantErr:  true,
 		},
 		{
-			name:     "invalid API key (too short)",
-			apiKey:   "sk-short",
-			model:    "gpt-4o",
-			style:    "casual",
-			language: "english",
-			wantErr:  true,
-		},
-		{
-			name:     "invalid API key (wrong prefix)",
-			apiKey:   "invalid-key-123456789012345678901234567890",
-			model:    "gpt-4o",
+			name:     "empty model",
+			provider: provider.NewMockProvider(),
+			model:    "",
 			style:    "casual",
 			language: "english",
 			wantErr:  true,
 		},
 		{
 			name:     "different model",
-			apiKey:   "sk-test1234567890123456789012345678901234567890",
+			provider: provider.NewMockProvider(),
 			model:    "gpt-3.5-turbo",
 			style:    "formal",
 			language: "english",
 			wantErr:  false,
 		},
 		{
-			name:     "different mode",
-			apiKey:   "sk-test1234567890123456789012345678901234567890",
+			name:     "different style",
+			provider: provider.NewMockProvider(),
 			model:    "gpt-4o",
 			style:    "academic",
 			language: "english",
@@ -64,7 +58,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:     "empty language defaults to english",
-			apiKey:   "sk-test1234567890123456789012345678901234567890",
+			provider: provider.NewMockProvider(),
 			model:    "gpt-4o",
 			style:    "casual",
 			language: "",
@@ -72,7 +66,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:     "non-english language",
-			apiKey:   "sk-test1234567890123456789012345678901234567890",
+			provider: provider.NewMockProvider(),
 			model:    "gpt-4o",
 			style:    "casual",
 			language: "spanish",
@@ -82,7 +76,7 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New(tt.apiKey, tt.model, tt.style, tt.language)
+			corrector, err := New(tt.provider, tt.model, tt.style, tt.language)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -105,8 +99,8 @@ func TestNew(t *testing.T) {
 				if corrector.language != expectedLang {
 					t.Errorf("New() language = %v, want %v", corrector.language, expectedLang)
 				}
-				if corrector.client == nil {
-					t.Error("New() client is nil")
+				if corrector.provider == nil {
+					t.Error("New() provider is nil")
 				}
 			} else {
 				if corrector != nil {
@@ -185,7 +179,8 @@ func TestBuildPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", tt.style, "english")
+			mockProv := provider.NewMockProvider()
+			corrector, err := New(mockProv, "gpt-4o", tt.style, "english")
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -236,7 +231,8 @@ func TestBuildPromptStyleSpecificity(t *testing.T) {
 	prompts := make(map[string]string)
 
 	for _, style := range styles {
-		corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", style, "english")
+		mockProv := provider.NewMockProvider()
+		corrector, err := New(mockProv, "gpt-4o", style, "english")
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
@@ -283,7 +279,8 @@ func TestBuildPromptWithLanguage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", "casual", tt.language)
+			mockProv := provider.NewMockProvider()
+			corrector, err := New(mockProv, "gpt-4o", "casual", tt.language)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}

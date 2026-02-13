@@ -14,8 +14,10 @@ import (
 	"github.com/maximbilan/grammr/internal/clipboard"
 	"github.com/maximbilan/grammr/internal/config"
 	"github.com/maximbilan/grammr/internal/corrector"
+	"github.com/maximbilan/grammr/internal/provider"
 	"github.com/maximbilan/grammr/internal/ratelimit"
 	"github.com/maximbilan/grammr/internal/translator"
+	"github.com/maximbilan/grammr/internal/validation"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -47,6 +49,28 @@ func createTimeoutContext(cfg *config.Config) (context.Context, context.CancelFu
 		timeoutSeconds = 30 // Default fallback
 	}
 	return context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+}
+
+// createProvider creates an AI provider based on the config
+func createProvider(cfg *config.Config) (provider.Provider, error) {
+	apiKey := cfg.GetAPIKey()
+	if err := validation.ValidateAPIKey(apiKey); err != nil {
+		return nil, err
+	}
+
+	providerType := cfg.Provider
+	if providerType == "" {
+		providerType = "openai" // Default to OpenAI for backward compatibility
+	}
+
+	switch providerType {
+	case "anthropic":
+		return provider.NewAnthropicProvider(apiKey)
+	case "openai":
+		return provider.NewOpenAIProvider(apiKey)
+	default:
+		return nil, fmt.Errorf("unknown provider: %s (supported: openai, anthropic)", providerType)
+	}
 }
 
 // saveToCache saves corrected text to cache, handling errors gracefully
@@ -287,17 +311,23 @@ func NewModel(cfg *config.Config) (*Model, error) {
 		}
 	}
 
+	// Create provider
+	prov, err := createProvider(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider: %w", err)
+	}
+
 	// Create rate limiter if enabled
 	rateLimiter := createRateLimiter(cfg)
 
-	cor, err := corrector.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.Style, cfg.Language, rateLimiter)
+	cor, err := corrector.NewWithRateLimit(prov, cfg.Model, cfg.Style, cfg.Language, rateLimiter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create corrector: %w", err)
 	}
 
 	var trans *translator.Translator
 	if cfg.TranslationLanguage != "" {
-		trans, err = translator.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.TranslationLanguage, rateLimiter)
+		trans, err = translator.NewWithRateLimit(prov, cfg.Model, cfg.TranslationLanguage, rateLimiter)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create translator: %w", err)
 		}
@@ -461,8 +491,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) switchStyle(styleName, displayName string) (tea.Model, tea.Cmd) {
 	m.config.Style = styleName
 	rateLimiter := createRateLimiter(m.config)
-	var err error
-	m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, styleName, m.config.Language, rateLimiter)
+	
+	// Create provider
+	prov, err := createProvider(m.config)
+	if err != nil {
+		return m, func() tea.Msg { return errMsg{err: err} }
+	}
+	
+	m.corrector, err = corrector.NewWithRateLimit(prov, m.config.Model, styleName, m.config.Language, rateLimiter)
 	if err != nil {
 		return m, func() tea.Msg { return errMsg{err: err} }
 	}
