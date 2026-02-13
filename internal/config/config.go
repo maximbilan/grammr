@@ -45,10 +45,11 @@ func Load() (*Config, error) {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configPath)
 
-	// Set defaults
+	// Set defaults (but don't set default for style to allow backward compatibility check)
 	viper.SetDefault("model", "gpt-4o")
 	viper.SetDefault("show_diff", true)
-	viper.SetDefault("style", "casual")
+	// Note: We don't set default for "style" here to allow backward compatibility check
+	// We'll set it after checking for "mode"
 	viper.SetDefault("language", "english")
 	viper.SetDefault("translation_language", "")
 	viper.SetDefault("cache_enabled", true)
@@ -65,6 +66,8 @@ func Load() (*Config, error) {
 			if err := os.MkdirAll(configPath, ConfigDirPerm); err != nil {
 				return nil, fmt.Errorf("failed to create config directory: %w", err)
 			}
+			// Set default for style now (no config file, so no backward compatibility needed)
+			viper.SetDefault("style", "casual")
 			// Return config with defaults
 			config := &Config{}
 			if err := viper.Unmarshal(config); err != nil {
@@ -75,16 +78,21 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
 
+	// Backward compatibility: if "mode" exists but "style" doesn't, copy mode to style
+	if viper.IsSet("mode") && !viper.IsSet("style") {
+		if oldMode := viper.GetString("mode"); oldMode != "" {
+			viper.Set("style", oldMode)
+		}
+	}
+	
+	// Set default for style if it still doesn't exist
+	if !viper.IsSet("style") {
+		viper.SetDefault("style", "casual")
+	}
+
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	// Backward compatibility: if style is empty but mode exists, use mode
-	if config.Style == "" {
-		if oldMode := viper.GetString("mode"); oldMode != "" {
-			config.Style = oldMode
-		}
 	}
 
 	return &config, nil

@@ -230,6 +230,8 @@ func TestSet(t *testing.T) {
 			name:  "set style (backward compatible with mode)",
 			key:   "mode",
 			value: "technical",
+			// Note: Get("mode") will return nil since we map it to "style"
+			// This test verifies Set works, but Get("mode") won't work after mapping
 		},
 		{
 			name:  "set style",
@@ -253,9 +255,14 @@ func TestSet(t *testing.T) {
 
 			// Verify value was set
 			viper.Reset()
-			got := Get(tt.key)
+			// If key was "mode", it was mapped to "style", so check "style" instead
+			checkKey := tt.key
+			if tt.key == "mode" {
+				checkKey = "style"
+			}
+			got := Get(checkKey)
 			if got != tt.value {
-				t.Errorf("Set() Get(%v) = %v, want %v", tt.key, got, tt.value)
+				t.Errorf("Set() Get(%v) = %v, want %v", checkKey, got, tt.value)
 			}
 		})
 	}

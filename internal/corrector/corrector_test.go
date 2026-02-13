@@ -126,31 +126,31 @@ func TestBuildPrompt(t *testing.T) {
 		wantText string // Text that should be in prompt
 	}{
 		{
-			name:     "casual mode",
+			name:     "casual style",
 			style:    "casual",
 			text:     "Hello world",
-			wantMode: "casual",
+			wantStyle: "casual",
 			wantText: "Hello world",
 		},
 		{
-			name:     "formal mode",
+			name:     "formal style",
 			style:    "formal",
 			text:     "Fix this text",
-			wantMode: "formal",
+			wantStyle: "formal",
 			wantText: "Fix this text",
 		},
 		{
-			name:     "academic mode",
+			name:     "academic style",
 			style:    "academic",
 			text:     "Academic writing",
-			wantMode: "academic",
+			wantStyle: "academic",
 			wantText: "Academic writing",
 		},
 		{
-			name:     "technical mode",
+			name:     "technical style",
 			style:    "technical",
 			text:     "Technical documentation",
-			wantMode: "technical",
+			wantStyle: "technical",
 			wantText: "Technical documentation",
 		},
 		{
