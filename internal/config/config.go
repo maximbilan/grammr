@@ -21,7 +21,6 @@ const (
 type Config struct {
 	APIKey            string `mapstructure:"api_key"`
 	Model             string `mapstructure:"model"`
-	Theme             string `mapstructure:"theme"`
 	ShowDiff          bool   `mapstructure:"show_diff"`
 	AutoCopy          bool   `mapstructure:"auto_copy"`
 	Mode              string `mapstructure:"mode"`
@@ -29,6 +28,10 @@ type Config struct {
 	TranslationLanguage string `mapstructure:"translation_language"`
 	CacheEnabled      bool   `mapstructure:"cache_enabled"`
 	CacheTTLDays      int    `mapstructure:"cache_ttl_days"`
+	RateLimitEnabled  bool   `mapstructure:"rate_limit_enabled"`
+	RateLimitRequests int    `mapstructure:"rate_limit_requests"`
+	RateLimitWindow   int    `mapstructure:"rate_limit_window_seconds"`
+	RequestTimeoutSeconds int `mapstructure:"request_timeout_seconds"`
 }
 
 func Load() (*Config, error) {
@@ -44,13 +47,16 @@ func Load() (*Config, error) {
 
 	// Set defaults
 	viper.SetDefault("model", "gpt-4o")
-	viper.SetDefault("theme", "dark")
 	viper.SetDefault("show_diff", true)
 	viper.SetDefault("mode", "casual")
 	viper.SetDefault("language", "english")
 	viper.SetDefault("translation_language", "")
 	viper.SetDefault("cache_enabled", true)
 	viper.SetDefault("cache_ttl_days", 7)
+	viper.SetDefault("rate_limit_enabled", true)
+	viper.SetDefault("rate_limit_requests", 60)      // 60 requests
+	viper.SetDefault("rate_limit_window_seconds", 60) // per minute
+	viper.SetDefault("request_timeout_seconds", 30)   // 30 seconds default timeout
 
 	// Try to read config
 	if err := viper.ReadInConfig(); err != nil {
@@ -91,7 +97,6 @@ func Save(cfg *Config) error {
 	// Set values
 	viper.Set("api_key", cfg.APIKey)
 	viper.Set("model", cfg.Model)
-	viper.Set("theme", cfg.Theme)
 	viper.Set("show_diff", cfg.ShowDiff)
 	viper.Set("auto_copy", cfg.AutoCopy)
 	viper.Set("mode", cfg.Mode)
@@ -99,6 +104,10 @@ func Save(cfg *Config) error {
 	viper.Set("translation_language", cfg.TranslationLanguage)
 	viper.Set("cache_enabled", cfg.CacheEnabled)
 	viper.Set("cache_ttl_days", cfg.CacheTTLDays)
+	viper.Set("rate_limit_enabled", cfg.RateLimitEnabled)
+	viper.Set("rate_limit_requests", cfg.RateLimitRequests)
+	viper.Set("rate_limit_window_seconds", cfg.RateLimitWindow)
+	viper.Set("request_timeout_seconds", cfg.RequestTimeoutSeconds)
 
 	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {

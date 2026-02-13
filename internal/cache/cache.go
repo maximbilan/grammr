@@ -1,9 +1,14 @@
 package cache
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +25,9 @@ const (
 )
 
 type Cache struct {
-	dir string
-	ttl time.Duration
+	dir     string
+	ttl     time.Duration
+	encKey  []byte // Encryption key derived from user's home directory
 }
 
 type CacheEntry struct {
@@ -46,9 +52,15 @@ func New(ttlDays int) (*Cache, error) {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
+	// Derive encryption key from user's home directory
+	// This ensures cache is encrypted per-user
+	keyHash := sha256.Sum256([]byte(home + ".grammr.cache.key"))
+	encKey := keyHash[:] // Use first 32 bytes for AES-256
+
 	return &Cache{
-		dir: cacheDir,
-		ttl: time.Duration(ttlDays) * 24 * time.Hour,
+		dir:    cacheDir,
+		ttl:    time.Duration(ttlDays) * 24 * time.Hour,
+		encKey: encKey,
 	}, nil
 }
 
@@ -79,8 +91,15 @@ func (c *Cache) Get(hash string) string {
 		return ""
 	}
 
+	// Try to decrypt the data (backward compatible with unencrypted entries)
+	decryptedData, err := c.decrypt(data)
+	if err != nil {
+		// If decryption fails, try parsing as plain JSON (backward compatibility)
+		decryptedData = data
+	}
+
 	var entry CacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
+	if err := json.Unmarshal(decryptedData, &entry); err != nil {
 		return ""
 	}
 
@@ -128,6 +147,12 @@ func (c *Cache) Set(hash, original, corrected string) error {
 		return fmt.Errorf("failed to marshal cache entry: %w", err)
 	}
 
+	// Encrypt the data before writing
+	encryptedData, err := c.encrypt(data)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt cache entry: %w", err)
+	}
+
 	path := filepath.Join(c.dir, hash+".json")
 	// Additional safety check: ensure the resolved path is within cache directory
 	// Use filepath.Clean to resolve any path traversal attempts
@@ -136,9 +161,70 @@ func (c *Cache) Set(hash, original, corrected string) error {
 		return fmt.Errorf("invalid cache path")
 	}
 
-	if err := os.WriteFile(path, data, CacheFilePerm); err != nil {
+	if err := os.WriteFile(path, encryptedData, CacheFilePerm); err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 
 	return nil
+}
+
+// encrypt encrypts data using AES-GCM
+func (c *Cache) encrypt(plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(c.encKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	
+	// Encode as base64 for safe storage
+	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(ciphertext)))
+	base64.StdEncoding.Encode(encoded, ciphertext)
+	
+	return encoded, nil
+}
+
+// decrypt decrypts data using AES-GCM
+func (c *Cache) decrypt(encryptedData []byte) ([]byte, error) {
+	// Try to decode from base64 first
+	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(encryptedData)))
+	n, err := base64.StdEncoding.Decode(decoded, encryptedData)
+	if err != nil {
+		// If base64 decode fails, assume it's not encrypted (backward compatibility)
+		return encryptedData, fmt.Errorf("not base64 encoded (likely unencrypted)")
+	}
+	encryptedData = decoded[:n]
+
+	block, err := aes.NewCipher(c.encKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(encryptedData) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := encryptedData[:nonceSize], encryptedData[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	return plaintext, nil
 }

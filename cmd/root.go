@@ -36,7 +36,16 @@ var setCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Set %s = %s\n", args[0], args[1])
+		// Mask sensitive values in output
+		displayValue := args[1]
+		if args[0] == "api_key" {
+			if len(args[1]) > 8 {
+				displayValue = args[1][:4] + "***" + args[1][len(args[1])-4:]
+			} else {
+				displayValue = "***"
+			}
+		}
+		fmt.Printf("Set %s = %s\n", args[0], displayValue)
 	},
 }
 
@@ -46,7 +55,16 @@ var getCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		value := config.Get(args[0])
-		fmt.Printf("%s = %v\n", args[0], value)
+		// Mask sensitive values in output
+		displayValue := value
+		if args[0] == "api_key" {
+			if strValue, ok := value.(string); ok && len(strValue) > 8 {
+				displayValue = strValue[:4] + "***" + strValue[len(strValue)-4:]
+			} else {
+				displayValue = "***"
+			}
+		}
+		fmt.Printf("%s = %v\n", args[0], displayValue)
 	},
 }
 
