@@ -19,7 +19,9 @@ const (
 )
 
 type Config struct {
-	APIKey            string `mapstructure:"api_key"`
+	Provider          string `mapstructure:"provider"` // "openai" or "anthropic"
+	APIKey            string `mapstructure:"api_key"`  // OpenAI API key (backward compatible)
+	AnthropicAPIKey   string `mapstructure:"anthropic_api_key"` // Anthropic API key
 	Model             string `mapstructure:"model"`
 	ShowDiff          bool   `mapstructure:"show_diff"`
 	AutoCopy          bool   `mapstructure:"auto_copy"`
@@ -34,6 +36,19 @@ type Config struct {
 	RequestTimeoutSeconds int `mapstructure:"request_timeout_seconds"`
 }
 
+// GetAPIKey returns the appropriate API key based on the provider
+func (c *Config) GetAPIKey() string {
+	if c.Provider == "anthropic" {
+		if c.AnthropicAPIKey != "" {
+			return c.AnthropicAPIKey
+		}
+		// Fallback to api_key for backward compatibility
+		return c.APIKey
+	}
+	// Default to OpenAI
+	return c.APIKey
+}
+
 func Load() (*Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -46,6 +61,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(configPath)
 
 	// Set defaults (but don't set default for style to allow backward compatibility check)
+	viper.SetDefault("provider", "openai") // Default to OpenAI for backward compatibility
 	viper.SetDefault("model", "gpt-4o")
 	viper.SetDefault("show_diff", true)
 	// Note: We don't set default for "style" here to allow backward compatibility check
@@ -110,7 +126,9 @@ func Save(cfg *Config) error {
 	}
 
 	// Set values
+	viper.Set("provider", cfg.Provider)
 	viper.Set("api_key", cfg.APIKey)
+	viper.Set("anthropic_api_key", cfg.AnthropicAPIKey)
 	viper.Set("model", cfg.Model)
 	viper.Set("show_diff", cfg.ShowDiff)
 	viper.Set("auto_copy", cfg.AutoCopy)

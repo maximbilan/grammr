@@ -2,7 +2,7 @@
 
 > Lightning-fast AI grammar checker in your terminal ⚡
 
-**grammr** (yes, it's misspelled on purpose) is a blazingly fast TUI grammar checker powered by OpenAI. Copy text from anywhere, fix it in seconds, and paste it back. No UI, no bloat, just speed.
+**grammr** (yes, it's misspelled on purpose) is a blazingly fast TUI grammar checker powered by OpenAI or Anthropic Claude. Copy text from anywhere, fix it in seconds, and paste it back. No UI, no bloat, just speed.
 
 ## Why grammr?
 
@@ -60,20 +60,30 @@ go build -o grammr
 
 ## Setup
 
-1. Get an API key from [OpenAI](https://platform.openai.com/api-keys)
+1. Get an API key from [OpenAI](https://platform.openai.com/api-keys) or [Anthropic](https://console.anthropic.com/)
 2. Initialize configuration (optional, creates config directory):
 ```bash
 grammr config init
 ```
 
 3. Configure grammr:
+
+**For OpenAI:**
 ```bash
-grammr config set api_key YOUR_API_KEY
+grammr config set provider openai
+grammr config set api_key YOUR_OPENAI_API_KEY
 ```
 
-Optional: Choose a model (default: gpt-4o)
+**For Anthropic Claude:**
 ```bash
-grammr config set model gpt-4o-mini  # Faster and cheaper
+grammr config set provider anthropic
+grammr config set anthropic_api_key YOUR_ANTHROPIC_API_KEY
+```
+
+Optional: Choose a model (default: gpt-4o for OpenAI, claude-3-5-sonnet-20241022 for Anthropic)
+```bash
+grammr config set model gpt-4o-mini  # OpenAI: Faster and cheaper
+grammr config set model claude-3-5-sonnet-20241022  # Anthropic: Latest Claude model
 ```
 
 Optional: Set language (default: english)
@@ -140,8 +150,10 @@ Switch correction styles:
 
 Edit `~/.grammr/config.yaml`:
 ```yaml
-api_key: "sk-..."
-model: "gpt-4o"  # or gpt-4o-mini
+provider: "openai"  # or "anthropic"
+api_key: "sk-..."  # OpenAI API key
+anthropic_api_key: "sk-ant-..."  # Anthropic API key (if using Anthropic)
+model: "gpt-4o"  # OpenAI: gpt-4o, gpt-4o-mini | Anthropic: claude-3-5-sonnet-20241022, claude-3-opus-20240229, etc.
 style: "casual"  # or use "mode" for backward compatibility
 language: "english"  # Default: english. Options: english, spanish, french, german, etc.
 translation_language: ""  # Optional: Translate corrected text to this language (e.g., "spanish", "french", "german")
@@ -153,21 +165,34 @@ auto_copy: false
 
 Or use the CLI:
 ```bash
-grammr config set model gpt-4o-mini
+grammr config set provider anthropic
+grammr config set anthropic_api_key sk-ant-...
+grammr config set model claude-3-5-sonnet-20241022
 grammr config set language spanish
 grammr config set translation_language french
+grammr config get provider
 grammr config get language
 grammr config get translation_language
 ```
 
 ## Model Comparison
 
+### OpenAI Models
 | Model | Speed | Cost | Quality |
 |-------|-------|------|---------|
 | gpt-4o | Fast | Medium | Excellent |
 | gpt-4o-mini | Very Fast | Cheap | Very Good |
 
-**Recommendation**: Start with `gpt-4o-mini` for speed and cost, upgrade to `gpt-4o` if you need better quality.
+### Anthropic Models
+| Model | Speed | Cost | Quality |
+|-------|-------|------|---------|
+| claude-3-5-sonnet-20241022 | Fast | Medium | Excellent |
+| claude-3-opus-20240229 | Medium | High | Excellent |
+| claude-3-haiku-20240307 | Very Fast | Cheap | Very Good |
+
+**Recommendation**: 
+- **OpenAI**: Start with `gpt-4o-mini` for speed and cost, upgrade to `gpt-4o` if you need better quality.
+- **Anthropic**: Start with `claude-3-5-sonnet-20241022` for the best balance, use `claude-3-haiku-20240307` for speed/cost, or `claude-3-opus-20240229` for maximum quality.
 
 ## Examples
 
@@ -256,7 +281,7 @@ The project includes comprehensive unit tests covering:
 
 ## Roadmap
 
-- [ ] Support for Anthropic Claude (in addition to OpenAI)
+- [x] Support for Anthropic Claude (in addition to OpenAI)
 - [ ] Custom system prompts
 - [ ] Plugin system for custom corrections
 - [ ] Batch file processing

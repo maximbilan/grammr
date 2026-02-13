@@ -3,30 +3,30 @@ package corrector
 import (
 	"context"
 	"fmt"
-	"io"
 
+	"github.com/maximbilan/grammr/internal/provider"
 	"github.com/maximbilan/grammr/internal/ratelimit"
 	"github.com/maximbilan/grammr/internal/validation"
-	"github.com/sashabaranov/go-openai"
 )
 
 
 type Corrector struct {
-	client     *openai.Client
-	model      string
-	style      string
-	language   string
+	provider    provider.Provider
+	model       string
+	style       string
+	language    string
 	rateLimiter *ratelimit.RateLimiter
 }
 
-func New(apiKey, model, style, language string) (*Corrector, error) {
-	return NewWithRateLimit(apiKey, model, style, language, nil)
+// New creates a new Corrector with a provider
+func New(prov provider.Provider, model, style, language string) (*Corrector, error) {
+	return NewWithRateLimit(prov, model, style, language, nil)
 }
 
 // NewWithRateLimit creates a new Corrector with an optional rate limiter
-func NewWithRateLimit(apiKey, model, style, language string, rateLimiter *ratelimit.RateLimiter) (*Corrector, error) {
-	if err := validation.ValidateAPIKey(apiKey); err != nil {
-		return nil, err
+func NewWithRateLimit(prov provider.Provider, model, style, language string, rateLimiter *ratelimit.RateLimiter) (*Corrector, error) {
+	if prov == nil {
+		return nil, fmt.Errorf("provider is required")
 	}
 
 	if model == "" {
@@ -51,7 +51,7 @@ func NewWithRateLimit(apiKey, model, style, language string, rateLimiter *rateli
 	}
 
 	return &Corrector{
-		client:      openai.NewClient(apiKey),
+		provider:    prov,
 		model:       model,
 		style:       style,
 		language:    language,
@@ -100,50 +100,14 @@ func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func
 		}
 	}
 
-	req := openai.ChatCompletionRequest{
-		Model: c.model,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: c.buildPrompt(text),
-			},
+	messages := []provider.Message{
+		{
+			Role:    provider.RoleUser,
+			Content: c.buildPrompt(text),
 		},
-		Stream: true,
 	}
 
-	stream, err := c.client.CreateChatCompletionStream(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-	defer func() {
-		stream.Close() // Ignore close errors
-	}()
-
-	for {
-		// Check context cancellation
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled: %w", ctx.Err())
-		default:
-		}
-
-		response, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("stream receive error: %w", err)
-		}
-
-		if len(response.Choices) > 0 {
-			chunk := response.Choices[0].Delta.Content
-			if chunk != "" {
-				onChunk(chunk)
-			}
-		}
-	}
-
-	return nil
+	return c.provider.StreamChat(ctx, c.model, messages, onChunk)
 }
 
 // Correct performs a non-streaming correction (fallback)
@@ -163,24 +127,12 @@ func (c *Corrector) Correct(ctx context.Context, text string) (string, error) {
 		}
 	}
 
-	req := openai.ChatCompletionRequest{
-		Model: c.model,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: c.buildPrompt(text),
-			},
+	messages := []provider.Message{
+		{
+			Role:    provider.RoleUser,
+			Content: c.buildPrompt(text),
 		},
 	}
 
-	resp, err := c.client.CreateChatCompletion(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("failed to create completion: %w", err)
-	}
-
-	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("no response from API")
-	}
-
-	return resp.Choices[0].Message.Content, nil
+	return c.provider.Chat(ctx, c.model, messages)
 }
