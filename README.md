@@ -8,7 +8,7 @@
 
 - **Fast**: Sub-3-second workflow from copy to paste
 - **Keyboard-only**: Vim-inspired keybindings
-- **AI-powered**: GPT-4o quality beats rule-based checkers
+- **AI-powered**: GPT-4o and Claude quality beats rule-based checkers
 - **Translation**: Built-in AI translation to any language
 - **Offline cache**: Already-checked text loads instantly
 - **Beautiful**: Colorful diffs, clean interface
