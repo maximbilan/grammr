@@ -21,7 +21,6 @@ const (
 type Config struct {
 	APIKey            string `mapstructure:"api_key"`
 	Model             string `mapstructure:"model"`
-	Theme             string `mapstructure:"theme"`
 	ShowDiff          bool   `mapstructure:"show_diff"`
 	AutoCopy          bool   `mapstructure:"auto_copy"`
 	Mode              string `mapstructure:"mode"`
@@ -48,7 +47,6 @@ func Load() (*Config, error) {
 
 	// Set defaults
 	viper.SetDefault("model", "gpt-4o")
-	viper.SetDefault("theme", "dark")
 	viper.SetDefault("show_diff", true)
 	viper.SetDefault("mode", "casual")
 	viper.SetDefault("language", "english")
@@ -99,7 +97,6 @@ func Save(cfg *Config) error {
 	// Set values
 	viper.Set("api_key", cfg.APIKey)
 	viper.Set("model", cfg.Model)
-	viper.Set("theme", cfg.Theme)
 	viper.Set("show_diff", cfg.ShowDiff)
 	viper.Set("auto_copy", cfg.AutoCopy)
 	viper.Set("mode", cfg.Mode)

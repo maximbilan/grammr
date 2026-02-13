@@ -33,9 +33,6 @@ func TestLoad(t *testing.T) {
 		if cfg.Model != "gpt-4o" {
 			t.Errorf("Load() Model = %v, want gpt-4o", cfg.Model)
 		}
-		if cfg.Theme != "dark" {
-			t.Errorf("Load() Theme = %v, want dark", cfg.Theme)
-		}
 		if cfg.ShowDiff != true {
 			t.Errorf("Load() ShowDiff = %v, want true", cfg.ShowDiff)
 		}
@@ -73,7 +70,6 @@ func TestLoad(t *testing.T) {
 		configFile := filepath.Join(configPath, "config.yaml")
 		configContent := `api_key: test-key
 model: gpt-3.5-turbo
-theme: light
 show_diff: false
 mode: formal
 cache_enabled: false
@@ -98,9 +94,6 @@ translation_language: spanish
 		}
 		if cfg.Model != "gpt-3.5-turbo" {
 			t.Errorf("Load() Model = %v, want gpt-3.5-turbo", cfg.Model)
-		}
-		if cfg.Theme != "light" {
-			t.Errorf("Load() Theme = %v, want light", cfg.Theme)
 		}
 		if cfg.ShowDiff != false {
 			t.Errorf("Load() ShowDiff = %v, want false", cfg.ShowDiff)
@@ -139,7 +132,6 @@ func TestSave(t *testing.T) {
 			cfg: &Config{
 				APIKey:       "test-api-key",
 				Model:        "gpt-4",
-				Theme:        "light",
 				ShowDiff:     false,
 				AutoCopy:     true,
 				Mode:         "academic",
@@ -183,9 +175,6 @@ func TestSave(t *testing.T) {
 			}
 			if tt.cfg.Model != "" && loaded.Model != tt.cfg.Model {
 				t.Errorf("Save() Model = %v, want %v", loaded.Model, tt.cfg.Model)
-			}
-			if tt.cfg.Theme != "" && loaded.Theme != tt.cfg.Theme {
-				t.Errorf("Save() Theme = %v, want %v", loaded.Theme, tt.cfg.Theme)
 			}
 			if loaded.ShowDiff != tt.cfg.ShowDiff {
 				t.Errorf("Save() ShowDiff = %v, want %v", loaded.ShowDiff, tt.cfg.ShowDiff)

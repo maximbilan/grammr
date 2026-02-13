@@ -18,10 +18,6 @@ type Translator struct {
 	rateLimiter       *ratelimit.RateLimiter
 }
 
-func New(apiKey, model, translationLanguage string) (*Translator, error) {
-	return NewWithRateLimit(apiKey, model, translationLanguage, nil)
-}
-
 // NewWithRateLimit creates a new Translator with an optional rate limiter
 func NewWithRateLimit(apiKey, model, translationLanguage string, rateLimiter *ratelimit.RateLimiter) (*Translator, error) {
 	if err := validation.ValidateAPIKey(apiKey); err != nil {

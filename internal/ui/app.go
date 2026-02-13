@@ -191,54 +191,6 @@ func parseDiffIntoChanges(original, corrected string) []DiffChange {
 	return changes
 }
 
-// buildReviewedText builds the final text based on applied changes
-func buildReviewedText(original string, changes []DiffChange) string {
-	dmp := diffmatchpatch.New()
-	diffs := dmp.DiffMain(original, original, false) // Start with original
-	diffs = dmp.DiffCleanupSemantic(diffs)
-
-	// Rebuild diffs with applied changes
-	changeIdx := 0
-	var result strings.Builder
-	diffIdx := 0
-
-	for diffIdx < len(diffs) {
-		diff := diffs[diffIdx]
-
-		if diff.Type == diffmatchpatch.DiffEqual {
-			result.WriteString(diff.Text)
-			diffIdx++
-		} else if diff.Type == diffmatchpatch.DiffDelete {
-			// Check if this change was applied
-			if changeIdx < len(changes) && changes[changeIdx].Type == diffmatchpatch.DiffDelete {
-				if changes[changeIdx].Applied {
-					// Skip the delete (don't write it)
-				} else if changes[changeIdx].Skipped {
-					// Keep the original text
-					result.WriteString(diff.Text)
-				}
-				changeIdx++
-			} else {
-				// No decision made, skip by default
-				result.WriteString(diff.Text)
-			}
-			diffIdx++
-		} else if diff.Type == diffmatchpatch.DiffInsert {
-			// Check if this change was applied
-			if changeIdx < len(changes) && changes[changeIdx].Type == diffmatchpatch.DiffInsert {
-				if changes[changeIdx].Applied {
-					// Apply the insert
-					result.WriteString(diff.Text)
-				}
-				changeIdx++
-			}
-			diffIdx++
-		}
-	}
-
-	return result.String()
-}
-
 // buildReviewedTextFromDiffs builds text from original and corrected using change decisions
 func buildReviewedTextFromDiffs(original, corrected string, changes []DiffChange) string {
 	dmp := diffmatchpatch.New()
@@ -447,20 +399,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isTranslating = false
 		m.status = "[●] Correcting..."
 		// Start async correction
-		return m, m.streamCorrection(trimmedText)
-
-	case startStreamingMsg:
-		// This is now handled by textPastedMsg, but keeping for compatibility
-		trimmedText := trimTrailingWhitespace(msg.text)
-		m.originalText = trimmedText
-		m.originalEditor.SetValue(trimmedText)
-		m.correctedText = ""
-		m.correctedEditor.SetValue("")
-		m.translatedText = ""
-		m.translationEditor.SetValue("")
-		m.isLoading = true
-		m.isTranslating = false
-		m.status = "[●] Correcting..."
 		return m, m.streamCorrection(trimmedText)
 
 	case correctionDoneMsg:
@@ -792,10 +730,6 @@ func (m Model) pasteAndCorrect() tea.Cmd {
 		// No cache - show original immediately, then start correction
 		return textPastedMsg{text: text}
 	}
-}
-
-type startStreamingMsg struct {
-	text string
 }
 
 func (m Model) streamCorrection(text string) tea.Cmd {
