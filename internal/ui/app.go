@@ -919,7 +919,7 @@ func (m Model) View() string {
 	}
 
 	// Build header components
-	headerLeft := headerStyle.Render("grammr v1.0.2") + " " + styleIndicator
+	headerLeft := headerStyle.Render("grammr v1.0.4") + " " + styleIndicator
 	if headerLoadingIndicator != "" {
 		headerLeft += " " + headerLoadingIndicator
 	}
