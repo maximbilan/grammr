@@ -128,7 +128,7 @@ That's it! 🎉
 | `Space` | Skip current change |
 | `Esc` | Exit review mode |
 
-### Modes
+### Styles
 
 Switch correction styles:
 - `1` - Casual (default)
@@ -142,7 +142,7 @@ Edit `~/.grammr/config.yaml`:
 ```yaml
 api_key: "sk-..."
 model: "gpt-4o"  # or gpt-4o-mini
-mode: "casual"
+style: "casual"  # or use "mode" for backward compatibility
 language: "english"  # Default: english. Options: english, spanish, french, german, etc.
 translation_language: ""  # Optional: Translate corrected text to this language (e.g., "spanish", "french", "german")
 cache_enabled: true
@@ -177,7 +177,7 @@ grammr
 # Press V, wait, press C
 ```
 
-**Change mode:**
+**Change style:**
 ```bash
 # Press 2 for formal writing
 # Press V to paste

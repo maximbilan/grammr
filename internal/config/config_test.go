@@ -36,8 +36,8 @@ func TestLoad(t *testing.T) {
 		if cfg.ShowDiff != true {
 			t.Errorf("Load() ShowDiff = %v, want true", cfg.ShowDiff)
 		}
-		if cfg.Mode != "casual" {
-			t.Errorf("Load() Mode = %v, want casual", cfg.Mode)
+		if cfg.Style != "casual" {
+			t.Errorf("Load() Style = %v, want casual", cfg.Style)
 		}
 		if cfg.CacheEnabled != true {
 			t.Errorf("Load() CacheEnabled = %v, want true", cfg.CacheEnabled)
@@ -98,8 +98,8 @@ translation_language: spanish
 		if cfg.ShowDiff != false {
 			t.Errorf("Load() ShowDiff = %v, want false", cfg.ShowDiff)
 		}
-		if cfg.Mode != "formal" {
-			t.Errorf("Load() Mode = %v, want formal", cfg.Mode)
+		if cfg.Style != "formal" {
+			t.Errorf("Load() Style = %v, want formal", cfg.Style)
 		}
 		if cfg.CacheEnabled != false {
 			t.Errorf("Load() CacheEnabled = %v, want false", cfg.CacheEnabled)
@@ -134,7 +134,7 @@ func TestSave(t *testing.T) {
 				Model:        "gpt-4",
 				ShowDiff:     false,
 				AutoCopy:     true,
-				Mode:         "academic",
+				Style:        "academic",
 				CacheEnabled: true,
 				CacheTTLDays: 10,
 			},
@@ -182,8 +182,8 @@ func TestSave(t *testing.T) {
 			if loaded.AutoCopy != tt.cfg.AutoCopy {
 				t.Errorf("Save() AutoCopy = %v, want %v", loaded.AutoCopy, tt.cfg.AutoCopy)
 			}
-			if tt.cfg.Mode != "" && loaded.Mode != tt.cfg.Mode {
-				t.Errorf("Save() Mode = %v, want %v", loaded.Mode, tt.cfg.Mode)
+			if tt.cfg.Style != "" && loaded.Style != tt.cfg.Style {
+				t.Errorf("Save() Style = %v, want %v", loaded.Style, tt.cfg.Style)
 			}
 			if loaded.CacheEnabled != tt.cfg.CacheEnabled {
 				t.Errorf("Save() CacheEnabled = %v, want %v", loaded.CacheEnabled, tt.cfg.CacheEnabled)
@@ -227,9 +227,16 @@ func TestSet(t *testing.T) {
 			value: "gpt-3.5-turbo",
 		},
 		{
-			name:  "set mode",
+			name:  "set style (backward compatible with mode)",
 			key:   "mode",
 			value: "technical",
+			// Note: Get("mode") will return nil since we map it to "style"
+			// This test verifies Set works, but Get("mode") won't work after mapping
+		},
+		{
+			name:  "set style",
+			key:   "style",
+			value: "academic",
 		},
 		{
 			name:  "set translation_language",
@@ -248,9 +255,14 @@ func TestSet(t *testing.T) {
 
 			// Verify value was set
 			viper.Reset()
-			got := Get(tt.key)
+			// If key was "mode", it was mapped to "style", so check "style" instead
+			checkKey := tt.key
+			if tt.key == "mode" {
+				checkKey = "style"
+			}
+			got := Get(checkKey)
 			if got != tt.value {
-				t.Errorf("Set() Get(%v) = %v, want %v", tt.key, got, tt.value)
+				t.Errorf("Set() Get(%v) = %v, want %v", checkKey, got, tt.value)
 			}
 		})
 	}

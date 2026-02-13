@@ -23,7 +23,7 @@ type Config struct {
 	Model             string `mapstructure:"model"`
 	ShowDiff          bool   `mapstructure:"show_diff"`
 	AutoCopy          bool   `mapstructure:"auto_copy"`
-	Mode              string `mapstructure:"mode"`
+	Style             string `mapstructure:"style"`
 	Language          string `mapstructure:"language"`
 	TranslationLanguage string `mapstructure:"translation_language"`
 	CacheEnabled      bool   `mapstructure:"cache_enabled"`
@@ -45,10 +45,11 @@ func Load() (*Config, error) {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configPath)
 
-	// Set defaults
+	// Set defaults (but don't set default for style to allow backward compatibility check)
 	viper.SetDefault("model", "gpt-4o")
 	viper.SetDefault("show_diff", true)
-	viper.SetDefault("mode", "casual")
+	// Note: We don't set default for "style" here to allow backward compatibility check
+	// We'll set it after checking for "mode"
 	viper.SetDefault("language", "english")
 	viper.SetDefault("translation_language", "")
 	viper.SetDefault("cache_enabled", true)
@@ -65,6 +66,8 @@ func Load() (*Config, error) {
 			if err := os.MkdirAll(configPath, ConfigDirPerm); err != nil {
 				return nil, fmt.Errorf("failed to create config directory: %w", err)
 			}
+			// Set default for style now (no config file, so no backward compatibility needed)
+			viper.SetDefault("style", "casual")
 			// Return config with defaults
 			config := &Config{}
 			if err := viper.Unmarshal(config); err != nil {
@@ -73,6 +76,18 @@ func Load() (*Config, error) {
 			return config, nil
 		}
 		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Backward compatibility: if "mode" exists but "style" doesn't, copy mode to style
+	if viper.IsSet("mode") && !viper.IsSet("style") {
+		if oldMode := viper.GetString("mode"); oldMode != "" {
+			viper.Set("style", oldMode)
+		}
+	}
+	
+	// Set default for style if it still doesn't exist
+	if !viper.IsSet("style") {
+		viper.SetDefault("style", "casual")
 	}
 
 	var config Config
@@ -99,7 +114,7 @@ func Save(cfg *Config) error {
 	viper.Set("model", cfg.Model)
 	viper.Set("show_diff", cfg.ShowDiff)
 	viper.Set("auto_copy", cfg.AutoCopy)
-	viper.Set("mode", cfg.Mode)
+	viper.Set("style", cfg.Style)
 	viper.Set("language", cfg.Language)
 	viper.Set("translation_language", cfg.TranslationLanguage)
 	viper.Set("cache_enabled", cfg.CacheEnabled)
@@ -149,6 +164,11 @@ func Set(key, value string) error {
 
 	// Try to read existing config (ignore error if file doesn't exist)
 	_ = viper.ReadInConfig()
+
+	// Backward compatibility: map "mode" to "style"
+	if key == "mode" {
+		key = "style"
+	}
 
 	viper.Set(key, value)
 

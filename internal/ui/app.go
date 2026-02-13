@@ -290,7 +290,7 @@ func NewModel(cfg *config.Config) (*Model, error) {
 	// Create rate limiter if enabled
 	rateLimiter := createRateLimiter(cfg)
 
-	cor, err := corrector.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.Mode, cfg.Language, rateLimiter)
+	cor, err := corrector.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.Style, cfg.Language, rateLimiter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create corrector: %w", err)
 	}
@@ -457,6 +457,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// switchStyle changes the correction style and saves it to config
+func (m Model) switchStyle(styleName, displayName string) (tea.Model, tea.Cmd) {
+	m.config.Style = styleName
+	rateLimiter := createRateLimiter(m.config)
+	var err error
+	m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, styleName, m.config.Language, rateLimiter)
+	if err != nil {
+		return m, func() tea.Msg { return errMsg{err: err} }
+	}
+	// Save style to config file
+	if err := config.Save(m.config); err != nil {
+		// Log error but don't fail - style is still changed in memory
+		m.status = fmt.Sprintf("Style: %s (config save failed)", displayName)
+	} else {
+		m.status = fmt.Sprintf("Style: %s", displayName)
+	}
+	return m, nil
+}
+
 func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "v", "V":
@@ -535,45 +554,13 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "1":
-		m.config.Mode = "casual"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "casual", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		m.status = "Mode: Casual"
-		return m, nil
+		return m.switchStyle("casual", "Casual")
 	case "2":
-		m.config.Mode = "formal"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "formal", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		m.status = "Mode: Formal"
-		return m, nil
+		return m.switchStyle("formal", "Formal")
 	case "3":
-		m.config.Mode = "academic"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "academic", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		m.status = "Mode: Academic"
-		return m, nil
+		return m.switchStyle("academic", "Academic")
 	case "4":
-		m.config.Mode = "technical"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "technical", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		m.status = "Mode: Technical"
-		return m, nil
+		return m.switchStyle("technical", "Technical")
 	}
 
 	return m, nil
@@ -844,8 +831,8 @@ func (m Model) View() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	// Render mode indicator with visual styling
-	modeIndicator := m.renderModeIndicator()
+	// Render style indicator with visual styling
+	styleIndicator := m.renderStyleIndicator()
 
 	headerLoadingIndicator := ""
 	if m.isLoading {
@@ -853,7 +840,7 @@ func (m Model) View() string {
 	}
 
 	// Build header components
-	headerLeft := headerStyle.Render("grammr v1.0.2") + " " + modeIndicator
+	headerLeft := headerStyle.Render("grammr v1.0.2") + " " + styleIndicator
 	if headerLoadingIndicator != "" {
 		headerLeft += " " + headerLoadingIndicator
 	}
@@ -1062,30 +1049,30 @@ func (m Model) View() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	// Create mode shortcuts with visual indication (compact version)
-	modeShortcuts := m.renderModeShortcuts()
+	// Create style shortcuts with visual indication (compact version)
+	styleShortcuts := m.renderStyleShortcuts()
 
-	// Build footer with mode shortcuts - always compact
+	// Build footer with style shortcuts - always compact
 	mainFooterText := "V: Paste  C: Copy  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help"
 	if m.translator != nil {
 		mainFooterText = "V: Paste  C: Copy  T: Copy Translation  E: Edit  R: Retry  D: Diff  A: Review  Q: Quit  ?: Help"
 	}
 	mainFooter := footerStyle.Render(mainFooterText)
-	modeShortcutsWidth := lipgloss.Width(modeShortcuts)
+	styleShortcutsWidth := lipgloss.Width(styleShortcuts)
 	mainFooterWidth := lipgloss.Width(mainFooter)
 
 	var footer string
-	if m.height > 22 && mainFooterWidth+modeShortcutsWidth+5 > m.width {
+	if m.height > 22 && mainFooterWidth+styleShortcutsWidth+5 > m.width {
 		// Two-line footer if there's space and content is too wide
-		footer = mainFooter + "\n" + modeShortcuts
+		footer = mainFooter + "\n" + styleShortcuts
 	} else {
 		// Single-line footer
 		separator := "  |  "
-		if mainFooterWidth+modeShortcutsWidth+lipgloss.Width(separator) > m.width {
+		if mainFooterWidth+styleShortcutsWidth+lipgloss.Width(separator) > m.width {
 			// If still too wide, use shorter separator
 			separator = " | "
 		}
-		footer = mainFooter + separator + modeShortcuts
+		footer = mainFooter + separator + styleShortcuts
 	}
 
 	s.WriteString(strings.Repeat("─", m.width))
@@ -1116,10 +1103,10 @@ func (m Model) renderReviewMode() string {
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1)
 
-	// Render mode indicator with visual styling
-	modeIndicator := m.renderModeIndicator()
+	// Render style indicator with visual styling
+	styleIndicator := m.renderStyleIndicator()
 
-	headerLeft := headerStyle.Render("grammr - Review Changes") + " " + modeIndicator
+	headerLeft := headerStyle.Render("grammr - Review Changes") + " " + styleIndicator
 	status := statusStyle.Render(m.status)
 
 	// Check if header fits on one line
@@ -1403,11 +1390,11 @@ func (m Model) renderReviewPreview() string {
 	return previewText
 }
 
-// renderModeIndicator creates a visually styled badge for the current mode
-func (m Model) renderModeIndicator() string {
+// renderStyleIndicator creates a visually styled badge for the current style
+func (m Model) renderStyleIndicator() string {
 	var label, color string
 
-	switch m.config.Mode {
+	switch m.config.Style {
 	case "casual":
 		label = "Casual"
 		color = "10" // Bright green
@@ -1422,25 +1409,25 @@ func (m Model) renderModeIndicator() string {
 		color = "11" // Bright yellow
 	default:
 		// Capitalize first letter
-		if len(m.config.Mode) > 0 {
-			label = strings.ToUpper(string(m.config.Mode[0])) + strings.ToLower(m.config.Mode[1:])
+		if len(m.config.Style) > 0 {
+			label = strings.ToUpper(string(m.config.Style[0])) + strings.ToLower(m.config.Style[1:])
 		} else {
-			label = m.config.Mode
+			label = m.config.Style
 		}
 		color = "8" // Gray
 	}
 
 	// Use a simple colored style with brackets
-	modeStyle := lipgloss.NewStyle().
+	styleBadge := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(color))
 
-	return modeStyle.Render("[" + label + "]")
+	return styleBadge.Render("[" + label + "]")
 }
 
-// renderModeShortcuts creates a visual indicator showing all modes with the active one highlighted
-func (m Model) renderModeShortcuts() string {
-	modes := []struct {
+// renderStyleShortcuts creates a visual indicator showing all styles with the active one highlighted
+func (m Model) renderStyleShortcuts() string {
+	styles := []struct {
 		key   string
 		name  string
 		color string
@@ -1452,26 +1439,26 @@ func (m Model) renderModeShortcuts() string {
 	}
 
 	var shortcuts []string
-	for _, mode := range modes {
-		var style lipgloss.Style
-		if m.config.Mode == strings.ToLower(mode.name) {
-			// Active mode - highlighted with color and bold
-			style = lipgloss.NewStyle().
+	for _, s := range styles {
+		var shortcutStyle lipgloss.Style
+		if m.config.Style == strings.ToLower(s.name) {
+			// Active style - highlighted with color and bold
+			shortcutStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color(mode.color))
-			shortcuts = append(shortcuts, style.Render("["+mode.key+": "+mode.name+"]"))
+				Foreground(lipgloss.Color(s.color))
+			shortcuts = append(shortcuts, shortcutStyle.Render("["+s.key+": "+s.name+"]"))
 		} else {
-			// Inactive mode - subtle gray
-			style = lipgloss.NewStyle().
+			// Inactive style - subtle gray
+			shortcutStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("8"))
-			shortcuts = append(shortcuts, style.Render(mode.key+": "+mode.name))
+			shortcuts = append(shortcuts, shortcutStyle.Render(s.key+": "+s.name))
 		}
 	}
 
 	footerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8"))
 
-	return footerStyle.Render("Modes: " + strings.Join(shortcuts, " "))
+	return footerStyle.Render("Styles: " + strings.Join(shortcuts, " "))
 }
 
 func (m Model) renderHelp() string {
@@ -1517,7 +1504,7 @@ func (m Model) renderHelp() string {
 	content.WriteString("  Ctrl+V    Paste & auto-correct\n")
 	content.WriteString("  Ctrl+C    Copy & quit\n\n")
 
-	content.WriteString(sectionStyle.Render("Modes:"))
+	content.WriteString(sectionStyle.Render("Styles:"))
 	content.WriteString("\n")
 	content.WriteString("  1         Casual (default)\n")
 	content.WriteString("  2         Formal\n")
