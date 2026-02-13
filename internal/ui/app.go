@@ -40,6 +40,26 @@ func createRateLimiter(cfg *config.Config) *ratelimit.RateLimiter {
 	return ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
 }
 
+// createTimeoutContext creates a context with timeout from config, with default fallback
+func createTimeoutContext(cfg *config.Config) (context.Context, context.CancelFunc) {
+	timeoutSeconds := cfg.RequestTimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 30 // Default fallback
+	}
+	return context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+}
+
+// saveToCache saves corrected text to cache, handling errors gracefully
+func (m Model) saveToCache(original, corrected string) {
+	if m.cache != nil {
+		hash := m.cache.Hash(original)
+		if err := m.cache.Set(hash, original, corrected); err != nil {
+			// Cache write failed, but correction succeeded
+			// We'll return the correction normally, but could log this in the future
+		}
+	}
+}
+
 type Mode int
 
 const (
@@ -784,11 +804,7 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 			return statusMsg("[●] Correcting...")
 		},
 		func() tea.Msg {
-			timeoutSeconds := m.config.RequestTimeoutSeconds
-			if timeoutSeconds <= 0 {
-				timeoutSeconds = 30 // Default fallback
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+			ctx, cancel := createTimeoutContext(m.config)
 			defer cancel()
 
 			corrected := ""
@@ -804,13 +820,7 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 			trimmedCorrected := trimTrailingWhitespace(corrected)
 
 			// Save to cache (handle errors gracefully - don't fail correction if cache fails)
-			if m.cache != nil {
-				hash := m.cache.Hash(text)
-				if err := m.cache.Set(hash, text, trimmedCorrected); err != nil {
-					// Cache write failed, but correction succeeded
-					// We'll return the correction normally, but could log this in the future
-				}
-			}
+			m.saveToCache(text, trimmedCorrected)
 
 			return correctionDoneMsg{
 				original:  text,
@@ -822,11 +832,7 @@ func (m Model) streamCorrection(text string) tea.Cmd {
 
 func (m Model) correctText(text string) tea.Cmd {
 	return func() tea.Msg {
-		timeoutSeconds := m.config.RequestTimeoutSeconds
-		if timeoutSeconds <= 0 {
-			timeoutSeconds = 30 // Default fallback
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+		ctx, cancel := createTimeoutContext(m.config)
 		defer cancel()
 
 		corrected, err := m.corrector.Correct(ctx, text)
@@ -838,13 +844,7 @@ func (m Model) correctText(text string) tea.Cmd {
 		trimmedCorrected := trimTrailingWhitespace(corrected)
 
 		// Save to cache (handle errors gracefully - don't fail correction if cache fails)
-		if m.cache != nil {
-			hash := m.cache.Hash(text)
-			if err := m.cache.Set(hash, text, trimmedCorrected); err != nil {
-				// Cache write failed, but correction succeeded
-				// We'll return the correction normally, but could log this in the future
-			}
-		}
+		m.saveToCache(text, trimmedCorrected)
 
 		return correctionDoneMsg{
 			original:  text,
@@ -859,11 +859,7 @@ func (m Model) streamTranslation(text string) tea.Cmd {
 			return statusMsg("[●] Translating...")
 		},
 		func() tea.Msg {
-			timeoutSeconds := m.config.RequestTimeoutSeconds
-			if timeoutSeconds <= 0 {
-				timeoutSeconds = 30 // Default fallback
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+			ctx, cancel := createTimeoutContext(m.config)
 			defer cancel()
 
 			translated := ""

@@ -4,17 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/maximbilan/grammr/internal/ratelimit"
+	"github.com/maximbilan/grammr/internal/validation"
 	"github.com/sashabaranov/go-openai"
 )
 
-const (
-	// MaxInputLength is the maximum allowed length for input text (100K characters)
-	// This prevents excessive API costs and potential memory issues
-	MaxInputLength = 100000
-)
 
 type Translator struct {
 	client            *openai.Client
@@ -27,25 +22,9 @@ func New(apiKey, model, translationLanguage string) (*Translator, error) {
 	return NewWithRateLimit(apiKey, model, translationLanguage, nil)
 }
 
-// validateAPIKey validates the format of an OpenAI API key
-func validateAPIKey(apiKey string) error {
-	if apiKey == "" {
-		return fmt.Errorf("API key is required")
-	}
-	// OpenAI API keys typically start with "sk-" and are 51 characters long
-	// But we'll be lenient: at least 20 chars and starts with "sk-"
-	if len(apiKey) < 20 {
-		return fmt.Errorf("API key appears to be invalid (too short)")
-	}
-	if !strings.HasPrefix(apiKey, "sk-") {
-		return fmt.Errorf("API key must start with 'sk-'")
-	}
-	return nil
-}
-
 // NewWithRateLimit creates a new Translator with an optional rate limiter
 func NewWithRateLimit(apiKey, model, translationLanguage string, rateLimiter *ratelimit.RateLimiter) (*Translator, error) {
-	if err := validateAPIKey(apiKey); err != nil {
+	if err := validation.ValidateAPIKey(apiKey); err != nil {
 		return nil, err
 	}
 
@@ -73,16 +52,8 @@ func (t *Translator) buildPrompt(text string) string {
 }
 
 func (t *Translator) StreamTranslate(ctx context.Context, text string, onChunk func(string)) error {
-	if text == "" {
-		return fmt.Errorf("text cannot be empty")
-	}
-
-	if len(text) > MaxInputLength {
-		return fmt.Errorf("text exceeds maximum length of %d characters (got %d)", MaxInputLength, len(text))
-	}
-
-	if onChunk == nil {
-		return fmt.Errorf("onChunk callback cannot be nil")
+	if err := validation.ValidateTextInput(text, onChunk); err != nil {
+		return err
 	}
 
 	// Apply rate limiting if enabled
@@ -144,8 +115,8 @@ func (t *Translator) Translate(ctx context.Context, text string) (string, error)
 		return "", fmt.Errorf("text cannot be empty")
 	}
 
-	if len(text) > MaxInputLength {
-		return "", fmt.Errorf("text exceeds maximum length of %d characters (got %d)", MaxInputLength, len(text))
+	if len(text) > validation.MaxInputLength {
+		return "", fmt.Errorf("text exceeds maximum length of %d characters (got %d)", validation.MaxInputLength, len(text))
 	}
 
 	// Apply rate limiting if enabled
