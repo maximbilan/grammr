@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -523,7 +524,7 @@ func TestCreateRateLimiter(t *testing.T) {
 			t.Fatal("createRateLimiter() returned nil")
 		}
 		// First call should pass immediately with initial token bucket.
-		if err := rl.Wait(t.Context()); err != nil {
+		if err := rl.Wait(context.Background()); err != nil {
 			t.Fatalf("Wait() error = %v", err)
 		}
 	})
