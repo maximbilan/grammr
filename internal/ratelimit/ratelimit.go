@@ -34,6 +34,10 @@ func New(maxRequests int, perDuration time.Duration, minInterval time.Duration) 
 	}
 
 	refillRate := perDuration / time.Duration(maxRequests)
+	if refillRate <= 0 {
+		// Defensive clamp for extreme config values (e.g. 1ms window, huge request count).
+		refillRate = time.Nanosecond
+	}
 
 	return &RateLimiter{
 		tokens:      maxRequests,
@@ -47,57 +51,18 @@ func New(maxRequests int, perDuration time.Duration, minInterval time.Duration) 
 
 // Wait blocks until a token is available, respecting rate limits
 func (rl *RateLimiter) Wait(ctx context.Context) error {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-
-	// Refill tokens based on elapsed time
-	elapsed := now.Sub(rl.lastRefill)
-	if elapsed > 0 {
-		tokensToAdd := int(elapsed / rl.refillRate)
-		if tokensToAdd > 0 {
-			rl.tokens = min(rl.maxTokens, rl.tokens+tokensToAdd)
-			rl.lastRefill = now
-		}
-	}
-
-	// Check minimum interval between requests
-	if !rl.lastRequest.IsZero() {
-		timeSinceLastRequest := now.Sub(rl.lastRequest)
-		if timeSinceLastRequest < rl.minInterval {
-			waitTime := rl.minInterval - timeSinceLastRequest
-			rl.mu.Unlock()
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(waitTime):
-			}
-			rl.mu.Lock()
-			now = time.Now()
-		}
-	}
-
-	// Wait for token availability
-	for rl.tokens <= 0 {
-		// Calculate when next token will be available
-		nextTokenTime := rl.lastRefill.Add(rl.refillRate)
-		waitTime := nextTokenTime.Sub(now)
-		if waitTime <= 0 {
-			waitTime = rl.refillRate
-		}
-
-		rl.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("rate limit wait cancelled: %w", ctx.Err())
-		case <-time.After(waitTime):
-		}
+	for {
 		rl.mu.Lock()
 
-		// Refill after waiting
-		now = time.Now()
-		elapsed = now.Sub(rl.lastRefill)
+		// Defensive guard: prevent division-by-zero if a malformed limiter is constructed.
+		if rl.refillRate <= 0 {
+			rl.refillRate = time.Nanosecond
+		}
+
+		now := time.Now()
+
+		// Refill tokens based on elapsed time.
+		elapsed := now.Sub(rl.lastRefill)
 		if elapsed > 0 {
 			tokensToAdd := int(elapsed / rl.refillRate)
 			if tokensToAdd > 0 {
@@ -105,13 +70,48 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 				rl.lastRefill = now
 			}
 		}
+
+		// Check minimum interval between requests.
+		if !rl.lastRequest.IsZero() {
+			timeSinceLastRequest := now.Sub(rl.lastRequest)
+			if timeSinceLastRequest < rl.minInterval {
+				waitTime := rl.minInterval - timeSinceLastRequest
+				rl.mu.Unlock()
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(waitTime):
+				}
+				continue
+			}
+		}
+
+		// Consume a token if available.
+		if rl.tokens > 0 {
+			rl.tokens--
+			rl.lastRequest = now
+			rl.mu.Unlock()
+			return nil
+		}
+
+		// Wait for next token availability.
+		nextTokenTime := rl.lastRefill.Add(rl.refillRate)
+		waitTime := nextTokenTime.Sub(now)
+		if waitTime <= 0 {
+			waitTime = rl.refillRate
+			if waitTime <= 0 {
+				waitTime = time.Nanosecond
+			}
+		}
+
+		rl.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("rate limit wait cancelled: %w", ctx.Err())
+		case <-time.After(waitTime):
+		}
 	}
-
-	// Consume a token
-	rl.tokens--
-	rl.lastRequest = now
-
-	return nil
 }
 
 // min returns the minimum of two integers

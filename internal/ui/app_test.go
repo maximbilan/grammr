@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maximbilan/grammr/internal/config"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -372,4 +373,70 @@ func TestBuildReviewedTextFromDiffsEdgeCases(t *testing.T) {
 			t.Error("buildReviewedTextFromDiffs() should preserve unicode characters")
 		}
 	})
+}
+
+func TestHasConfiguredAPIKey(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want bool
+	}{
+		{
+			name: "openai key configured",
+			cfg: &config.Config{
+				Provider: "openai",
+				APIKey:   "sk-openai-1234567890",
+			},
+			want: true,
+		},
+		{
+			name: "anthropic key configured",
+			cfg: &config.Config{
+				Provider:        "anthropic",
+				AnthropicAPIKey: "sk-ant-1234567890",
+			},
+			want: true,
+		},
+		{
+			name: "anthropic fallback to api_key",
+			cfg: &config.Config{
+				Provider: "anthropic",
+				APIKey:   "sk-legacy-1234567890",
+			},
+			want: true,
+		},
+		{
+			name: "missing keys",
+			cfg: &config.Config{
+				Provider: "openai",
+			},
+			want: false,
+		},
+		{
+			name: "nil config",
+			cfg:  nil,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasConfiguredAPIKey(tt.cfg)
+			if got != tt.want {
+				t.Fatalf("hasConfiguredAPIKey() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMissingAPIKeyMessage(t *testing.T) {
+	anthropicMessage := missingAPIKeyMessage(&config.Config{Provider: "anthropic"})
+	if !strings.Contains(anthropicMessage, "anthropic_api_key") {
+		t.Fatalf("anthropic message should mention anthropic_api_key, got: %q", anthropicMessage)
+	}
+
+	openAIMessage := missingAPIKeyMessage(&config.Config{Provider: "openai"})
+	if !strings.Contains(openAIMessage, "api_key") || strings.Contains(openAIMessage, "anthropic_api_key") {
+		t.Fatalf("openai message should mention api_key only, got: %q", openAIMessage)
+	}
 }

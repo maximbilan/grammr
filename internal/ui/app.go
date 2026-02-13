@@ -101,6 +101,20 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 	}
 }
 
+func hasConfiguredAPIKey(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return strings.TrimSpace(cfg.GetAPIKey()) != ""
+}
+
+func missingAPIKeyMessage(cfg *config.Config) string {
+	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Provider), "anthropic") {
+		return "API key not configured. Run: grammr config set anthropic_api_key YOUR_KEY"
+	}
+	return "API key not configured. Run: grammr config set api_key YOUR_KEY"
+}
+
 // saveToCache saves corrected text to cache, handling errors gracefully
 func (m Model) saveToCache(original, corrected string) {
 	if m.cache != nil {
@@ -125,18 +139,18 @@ const (
 
 // DiffChange represents a single change in the diff
 type DiffChange struct {
-	Type       diffmatchpatch.Operation
-	Text       string
-	Applied    bool // true if user applied this change
-	Skipped    bool // true if user skipped this change
+	Type    diffmatchpatch.Operation
+	Text    string
+	Applied bool // true if user applied this change
+	Skipped bool // true if user skipped this change
 }
 
 type Model struct {
 	// State
-	mode            Mode
-	originalText    string
-	correctedText   string
-	translatedText  string
+	mode           Mode
+	originalText   string
+	correctedText  string
+	translatedText string
 
 	// UI Components
 	originalEditor    textarea.Model
@@ -145,11 +159,11 @@ type Model struct {
 	viewport          viewport.Model
 
 	// State flags
-	isLoading      bool
-	isTranslating  bool
-	showDiff       bool
-	error          string
-	status         string
+	isLoading     bool
+	isTranslating bool
+	showDiff      bool
+	error         string
+	status        string
 
 	// Diff review state
 	diffChanges   []DiffChange // All changes from the diff
@@ -223,7 +237,7 @@ func parseDiffIntoChanges(original, corrected string) []DiffChange {
 		if diff.Type == diffmatchpatch.DiffDelete && i+1 < len(diffs) && diffs[i+1].Type == diffmatchpatch.DiffInsert {
 			// Pair them as a single change
 			changes = append(changes, DiffChange{
-				Type:    diffmatchpatch.DiffDelete, // Use delete as primary type
+				Type:    diffmatchpatch.DiffDelete,           // Use delete as primary type
 				Text:    diff.Text + " → " + diffs[i+1].Text, // Show both
 				Applied: false,
 				Skipped: false,
@@ -382,17 +396,17 @@ func NewModel(cfg *config.Config) (*Model, error) {
 	vp := viewport.New(80, 20)
 
 	return &Model{
-		mode:             ModeGlobal,
-		originalEditor:   originalEditor,
-		correctedEditor:  correctedEditor,
+		mode:              ModeGlobal,
+		originalEditor:    originalEditor,
+		correctedEditor:   correctedEditor,
 		translationEditor: translationEditor,
-		viewport:         vp,
-		showDiff:         cfg.ShowDiff,
-		corrector:        cor,
-		translator:       trans,
-		cache:            c,
-		config:           cfg,
-		status:           "Ready. Press V to paste, C to copy, ? for help",
+		viewport:          vp,
+		showDiff:          cfg.ShowDiff,
+		corrector:         cor,
+		translator:        trans,
+		cache:             c,
+		config:            cfg,
+		status:            "Ready. Press V to paste, C to copy, ? for help",
 	}, nil
 }
 
@@ -504,13 +518,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) switchStyle(styleName, displayName string) (tea.Model, tea.Cmd) {
 	m.config.Style = styleName
 	rateLimiter := createRateLimiter(m.config)
-	
+
 	// Create provider
 	prov, err := createProvider(m.config)
 	if err != nil {
 		return m, func() tea.Msg { return errMsg{err: err} }
 	}
-	
+
 	m.corrector, err = corrector.NewWithRateLimit(prov, m.config.Model, styleName, m.config.Language, rateLimiter)
 	if err != nil {
 		return m, func() tea.Msg { return errMsg{err: err} }
@@ -960,41 +974,41 @@ func (m Model) View() string {
 	s.WriteString("\n")
 	// Render box (edit mode is handled by renderEditMode())
 	boxWidth := m.width - 4
-		if boxWidth < 20 {
-			boxWidth = 20
-		}
-		// Account for: header (1-2 lines), separator (1), spacing (1), labels (3 if translation enabled, else 2), spacing between boxes (2 if translation, else 1), separator (1), footer (1-2)
-		// Total: ~12-14 lines for fixed content with translation, ~9-11 without
-		hasTranslation := m.translator != nil
-		fixedLines := 11
-		if hasTranslation {
-			fixedLines = 14
-		}
-		availableHeight := m.height - fixedLines
-		if availableHeight < 10 {
-			availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
-		}
-		numBoxes := 2
-		if hasTranslation {
-			numBoxes = 3
-		}
-		boxHeight := availableHeight / numBoxes
-		if boxHeight < 3 {
-			boxHeight = 3 // Minimum box height
-		}
-		// Wrap text to fit within box width (accounting for padding)
-		contentWidth := boxWidth - 4 // Account for padding (2 on each side)
-		if contentWidth < 1 {
-			contentWidth = 1
-		}
-		wrappedText := wrapText(m.originalText, contentWidth)
-		boxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("8")).
-			Padding(1, 2).
-			Width(boxWidth).
-			Height(boxHeight)
-		s.WriteString(boxStyle.Render(wrappedText))
+	if boxWidth < 20 {
+		boxWidth = 20
+	}
+	// Account for: header (1-2 lines), separator (1), spacing (1), labels (3 if translation enabled, else 2), spacing between boxes (2 if translation, else 1), separator (1), footer (1-2)
+	// Total: ~12-14 lines for fixed content with translation, ~9-11 without
+	hasTranslation := m.translator != nil
+	fixedLines := 11
+	if hasTranslation {
+		fixedLines = 14
+	}
+	availableHeight := m.height - fixedLines
+	if availableHeight < 10 {
+		availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
+	}
+	numBoxes := 2
+	if hasTranslation {
+		numBoxes = 3
+	}
+	boxHeight := availableHeight / numBoxes
+	if boxHeight < 3 {
+		boxHeight = 3 // Minimum box height
+	}
+	// Wrap text to fit within box width (accounting for padding)
+	contentWidth := boxWidth - 4 // Account for padding (2 on each side)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	wrappedText := wrapText(m.originalText, contentWidth)
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(1, 2).
+		Width(boxWidth).
+		Height(boxHeight)
+	s.WriteString(boxStyle.Render(wrappedText))
 	s.WriteString("\n\n")
 
 	// Corrected text
@@ -1037,24 +1051,24 @@ func (m Model) View() string {
 	}
 	content := m.correctedText
 
-		// Show loading indicator in the box if loading
-		if m.isLoading && content == "" {
-			loadingText := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("11")).
-				Italic(true).
-				Render("Correcting...")
-			content = loadingText
-		} else if m.showDiff && m.originalText != "" && m.correctedText != "" && m.mode != ModeReviewDiff {
-			// Only show diff view when not in review mode (review mode has its own display)
-			content = renderDiff(m.originalText, m.correctedText)
-		} else {
-			// Wrap text to fit within box width (accounting for padding)
-			contentWidth := boxWidth - 4 // Account for padding (2 on each side)
-			if contentWidth < 1 {
-				contentWidth = 1
-			}
-			content = wrapText(content, contentWidth)
+	// Show loading indicator in the box if loading
+	if m.isLoading && content == "" {
+		loadingText := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("11")).
+			Italic(true).
+			Render("Correcting...")
+		content = loadingText
+	} else if m.showDiff && m.originalText != "" && m.correctedText != "" && m.mode != ModeReviewDiff {
+		// Only show diff view when not in review mode (review mode has its own display)
+		content = renderDiff(m.originalText, m.correctedText)
+	} else {
+		// Wrap text to fit within box width (accounting for padding)
+		contentWidth := boxWidth - 4 // Account for padding (2 on each side)
+		if contentWidth < 1 {
+			contentWidth = 1
 		}
+		content = wrapText(content, contentWidth)
+	}
 
 	boxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -1731,8 +1745,8 @@ func Run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if cfg.APIKey == "" {
-		return fmt.Errorf("API key not configured. Run: grammr config set api_key YOUR_KEY")
+	if !hasConfiguredAPIKey(cfg) {
+		return fmt.Errorf("%s", missingAPIKeyMessage(cfg))
 	}
 
 	model, err := NewModel(cfg)
