@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/maximbilan/grammr/internal/config"
 	"github.com/maximbilan/grammr/internal/ui"
@@ -27,6 +28,18 @@ var configCmd = &cobra.Command{
 	Short: "Manage configuration",
 }
 
+func isSensitiveConfigKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	return normalized == "api_key" || normalized == "anthropic_api_key"
+}
+
+func maskSecret(value string) string {
+	if len(value) > 8 {
+		return value[:4] + "***" + value[len(value)-4:]
+	}
+	return "***"
+}
+
 var setCmd = &cobra.Command{
 	Use:   "set [key] [value]",
 	Short: "Set a config value",
@@ -38,12 +51,8 @@ var setCmd = &cobra.Command{
 		}
 		// Mask sensitive values in output
 		displayValue := args[1]
-		if args[0] == "api_key" {
-			if len(args[1]) > 8 {
-				displayValue = args[1][:4] + "***" + args[1][len(args[1])-4:]
-			} else {
-				displayValue = "***"
-			}
+		if isSensitiveConfigKey(args[0]) {
+			displayValue = maskSecret(args[1])
 		}
 		fmt.Printf("Set %s = %s\n", args[0], displayValue)
 	},
@@ -57,9 +66,9 @@ var getCmd = &cobra.Command{
 		value := config.Get(args[0])
 		// Mask sensitive values in output
 		displayValue := value
-		if args[0] == "api_key" {
-			if strValue, ok := value.(string); ok && len(strValue) > 8 {
-				displayValue = strValue[:4] + "***" + strValue[len(strValue)-4:]
+		if isSensitiveConfigKey(args[0]) {
+			if strValue, ok := value.(string); ok {
+				displayValue = maskSecret(strValue)
 			} else {
 				displayValue = "***"
 			}

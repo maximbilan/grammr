@@ -13,6 +13,22 @@ type OpenAIProvider struct {
 	client openai.Client
 }
 
+func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessageParamUnion {
+	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, msg := range messages {
+		switch msg.Role {
+		case RoleUser:
+			openaiMessages = append(openaiMessages, openai.UserMessage(msg.Content))
+		case RoleAssistant:
+			openaiMessages = append(openaiMessages, openai.AssistantMessage(msg.Content))
+		case RoleSystem:
+			// System messages are included in the messages array.
+			openaiMessages = append(openaiMessages, openai.SystemMessage(msg.Content))
+		}
+	}
+	return openaiMessages
+}
+
 // NewOpenAIProvider creates a new OpenAI provider
 func NewOpenAIProvider(apiKey string) (*OpenAIProvider, error) {
 	if apiKey == "" {
@@ -25,19 +41,7 @@ func NewOpenAIProvider(apiKey string) (*OpenAIProvider, error) {
 
 // StreamChat streams a chat completion response
 func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages []Message, onChunk func(string)) error {
-	// Convert messages to OpenAI format
-	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
-	for _, msg := range messages {
-		switch msg.Role {
-		case RoleUser:
-			openaiMessages = append(openaiMessages, openai.UserMessage(msg.Content))
-		case RoleAssistant:
-			openaiMessages = append(openaiMessages, openai.AssistantMessage(msg.Content))
-		case RoleSystem:
-			// System messages are included in the messages array
-			openaiMessages = append(openaiMessages, openai.SystemMessage(msg.Content))
-		}
-	}
+	openaiMessages := toOpenAIMessages(messages)
 
 	params := openai.ChatCompletionNewParams{
 		Model:    openai.ChatModel(model),
@@ -70,19 +74,7 @@ func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages 
 
 // Chat performs a non-streaming chat completion
 func (p *OpenAIProvider) Chat(ctx context.Context, model string, messages []Message) (string, error) {
-	// Convert messages to OpenAI format
-	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
-	for _, msg := range messages {
-		switch msg.Role {
-		case RoleUser:
-			openaiMessages = append(openaiMessages, openai.UserMessage(msg.Content))
-		case RoleAssistant:
-			openaiMessages = append(openaiMessages, openai.AssistantMessage(msg.Content))
-		case RoleSystem:
-			// System messages are included in the messages array
-			openaiMessages = append(openaiMessages, openai.SystemMessage(msg.Content))
-		}
-	}
+	openaiMessages := toOpenAIMessages(messages)
 
 	params := openai.ChatCompletionNewParams{
 		Model:    openai.ChatModel(model),

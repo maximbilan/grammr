@@ -188,15 +188,15 @@ func TestSave(t *testing.T) {
 			if loaded.CacheEnabled != tt.cfg.CacheEnabled {
 				t.Errorf("Save() CacheEnabled = %v, want %v", loaded.CacheEnabled, tt.cfg.CacheEnabled)
 			}
-		if loaded.CacheTTLDays != tt.cfg.CacheTTLDays {
-			t.Errorf("Save() CacheTTLDays = %v, want %v", loaded.CacheTTLDays, tt.cfg.CacheTTLDays)
-		}
-		if tt.cfg.Language != "" && loaded.Language != tt.cfg.Language {
-			t.Errorf("Save() Language = %v, want %v", loaded.Language, tt.cfg.Language)
-		}
-		if tt.cfg.TranslationLanguage != "" && loaded.TranslationLanguage != tt.cfg.TranslationLanguage {
-			t.Errorf("Save() TranslationLanguage = %v, want %v", loaded.TranslationLanguage, tt.cfg.TranslationLanguage)
-		}
+			if loaded.CacheTTLDays != tt.cfg.CacheTTLDays {
+				t.Errorf("Save() CacheTTLDays = %v, want %v", loaded.CacheTTLDays, tt.cfg.CacheTTLDays)
+			}
+			if tt.cfg.Language != "" && loaded.Language != tt.cfg.Language {
+				t.Errorf("Save() Language = %v, want %v", loaded.Language, tt.cfg.Language)
+			}
+			if tt.cfg.TranslationLanguage != "" && loaded.TranslationLanguage != tt.cfg.TranslationLanguage {
+				t.Errorf("Save() TranslationLanguage = %v, want %v", loaded.TranslationLanguage, tt.cfg.TranslationLanguage)
+			}
 		})
 	}
 }
@@ -345,5 +345,131 @@ func TestLoadWithInvalidConfigFile(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Error("Load() with invalid YAML should return error")
+	}
+}
+
+func TestGetAPIKey(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "openai provider uses api_key",
+			cfg: Config{
+				Provider: "openai",
+				APIKey:   "sk-openai-123",
+			},
+			want: "sk-openai-123",
+		},
+		{
+			name: "anthropic provider uses anthropic_api_key",
+			cfg: Config{
+				Provider:        "anthropic",
+				APIKey:          "sk-openai-fallback",
+				AnthropicAPIKey: "sk-ant-123",
+			},
+			want: "sk-ant-123",
+		},
+		{
+			name: "anthropic provider falls back to api_key",
+			cfg: Config{
+				Provider: "anthropic",
+				APIKey:   "sk-openai-fallback",
+			},
+			want: "sk-openai-fallback",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetAPIKey()
+			if got != tt.want {
+				t.Fatalf("GetAPIKey() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSaveAndSetPermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		viper.Reset()
+	}()
+
+	os.Setenv("HOME", tmpDir)
+
+	cfg := &Config{
+		Provider: "openai",
+		APIKey:   "sk-12345678901234567890",
+		Model:    "gpt-4o",
+		Style:    "casual",
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	configDir := filepath.Join(tmpDir, ".grammr")
+	configFile := filepath.Join(configDir, "config.yaml")
+
+	dirInfo, err := os.Stat(configDir)
+	if err != nil {
+		t.Fatalf("failed to stat config directory: %v", err)
+	}
+	if dirInfo.Mode().Perm()&0077 != 0 {
+		t.Fatalf("config directory should not be accessible by group/others, got mode %o", dirInfo.Mode().Perm())
+	}
+
+	fileInfo, err := os.Stat(configFile)
+	if err != nil {
+		t.Fatalf("failed to stat config file: %v", err)
+	}
+	if fileInfo.Mode().Perm()&0077 != 0 {
+		t.Fatalf("config file should not be accessible by group/others, got mode %o", fileInfo.Mode().Perm())
+	}
+
+	if err := Set("model", "gpt-4o-mini"); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	fileInfo, err = os.Stat(configFile)
+	if err != nil {
+		t.Fatalf("failed to stat config file after Set(): %v", err)
+	}
+	if fileInfo.Mode().Perm()&0077 != 0 {
+		t.Fatalf("config file should remain restricted after Set(), got mode %o", fileInfo.Mode().Perm())
+	}
+}
+
+func TestSetRejectsInvalidKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		viper.Reset()
+	}()
+
+	os.Setenv("HOME", tmpDir)
+
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "empty key", key: "", value: "x"},
+		{name: "key with space", key: "api key", value: "x"},
+		{name: "key with tab", key: "api\tkey", value: "x"},
+		{name: "key with newline", key: "api\nkey", value: "x"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Set(tt.key, tt.value)
+			if err == nil {
+				t.Fatalf("Set(%q, %q) expected error, got nil", tt.key, tt.value)
+			}
+		})
 	}
 }
