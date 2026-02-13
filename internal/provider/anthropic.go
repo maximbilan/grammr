@@ -13,6 +13,26 @@ type AnthropicProvider struct {
 	client anthropic.Client
 }
 
+func toAnthropicMessages(messages []Message) ([]anthropic.MessageParam, []anthropic.TextBlockParam) {
+	anthropicMessages := make([]anthropic.MessageParam, 0, len(messages))
+	systemPrompt := make([]anthropic.TextBlockParam, 0)
+
+	for _, msg := range messages {
+		if msg.Role == RoleSystem {
+			systemPrompt = append(systemPrompt, anthropic.TextBlockParam{Text: msg.Content})
+			continue
+		}
+		// Anthropic uses "user" and "assistant" roles.
+		if msg.Role == RoleUser {
+			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
+		} else if msg.Role == RoleAssistant {
+			anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)))
+		}
+	}
+
+	return anthropicMessages, systemPrompt
+}
+
 // NewAnthropicProvider creates a new Anthropic provider
 func NewAnthropicProvider(apiKey string) (*AnthropicProvider, error) {
 	if apiKey == "" {
@@ -28,22 +48,7 @@ func NewAnthropicProvider(apiKey string) (*AnthropicProvider, error) {
 
 // StreamChat streams a chat completion response
 func (p *AnthropicProvider) StreamChat(ctx context.Context, model string, messages []Message, onChunk func(string)) error {
-	// Convert messages to Anthropic format
-	anthropicMessages := make([]anthropic.MessageParam, 0)
-	var systemPrompt []anthropic.TextBlockParam
-
-	for _, msg := range messages {
-		if msg.Role == RoleSystem {
-			systemPrompt = append(systemPrompt, anthropic.TextBlockParam{Text: msg.Content})
-			continue
-		}
-		// Anthropic uses "user" and "assistant" roles
-		if msg.Role == RoleUser {
-			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
-		} else if msg.Role == RoleAssistant {
-			anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)))
-		}
-	}
+	anthropicMessages, systemPrompt := toAnthropicMessages(messages)
 
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(model),
@@ -91,22 +96,7 @@ func (p *AnthropicProvider) StreamChat(ctx context.Context, model string, messag
 
 // Chat performs a non-streaming chat completion
 func (p *AnthropicProvider) Chat(ctx context.Context, model string, messages []Message) (string, error) {
-	// Convert messages to Anthropic format
-	anthropicMessages := make([]anthropic.MessageParam, 0)
-	var systemPrompt []anthropic.TextBlockParam
-
-	for _, msg := range messages {
-		if msg.Role == RoleSystem {
-			systemPrompt = append(systemPrompt, anthropic.TextBlockParam{Text: msg.Content})
-			continue
-		}
-		// Anthropic uses "user" and "assistant" roles
-		if msg.Role == RoleUser {
-			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
-		} else if msg.Role == RoleAssistant {
-			anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)))
-		}
-	}
+	anthropicMessages, systemPrompt := toAnthropicMessages(messages)
 
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(model),

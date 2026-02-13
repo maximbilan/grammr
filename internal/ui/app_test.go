@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/maximbilan/grammr/internal/config"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -438,5 +441,322 @@ func TestMissingAPIKeyMessage(t *testing.T) {
 	openAIMessage := missingAPIKeyMessage(&config.Config{Provider: "openai"})
 	if !strings.Contains(openAIMessage, "api_key") || strings.Contains(openAIMessage, "anthropic_api_key") {
 		t.Fatalf("openai message should mention api_key only, got: %q", openAIMessage)
+	}
+}
+
+func newTestConfig() *config.Config {
+	return &config.Config{
+		Provider:              "openai",
+		APIKey:                "sk-12345678901234567890",
+		Model:                 "gpt-4o",
+		Style:                 "casual",
+		Language:              "english",
+		ShowDiff:              true,
+		CacheEnabled:          false,
+		RequestTimeoutSeconds: 1,
+	}
+}
+
+func newTestModel(t *testing.T, cfg *config.Config) Model {
+	t.Helper()
+	m, err := NewModel(cfg)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	return *m
+}
+
+func TestWrapText(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		width int
+		want  string
+	}{
+		{
+			name:  "non-positive width returns original",
+			text:  "hello world",
+			width: 0,
+			want:  "hello world",
+		},
+		{
+			name:  "simple hard wrap",
+			text:  "hello world",
+			width: 5,
+			want:  "hello\nworld",
+		},
+		{
+			name:  "multi-line preserves newlines",
+			text:  "abc def\nghi jkl",
+			width: 3,
+			want:  "abc\ndef\nghi\njkl",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := wrapText(tt.text, tt.width)
+			if got != tt.want {
+				t.Fatalf("wrapText(%q, %d) = %q, want %q", tt.text, tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateRateLimiter(t *testing.T) {
+	t.Run("disabled returns nil", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.RateLimitEnabled = false
+		if rl := createRateLimiter(cfg); rl != nil {
+			t.Fatalf("createRateLimiter() = %#v, want nil", rl)
+		}
+	})
+
+	t.Run("enabled returns limiter and defaults", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.RateLimitEnabled = true
+		cfg.RateLimitRequests = 0
+		cfg.RateLimitWindow = 0
+
+		rl := createRateLimiter(cfg)
+		if rl == nil {
+			t.Fatal("createRateLimiter() returned nil")
+		}
+		// First call should pass immediately with initial token bucket.
+		if err := rl.Wait(t.Context()); err != nil {
+			t.Fatalf("Wait() error = %v", err)
+		}
+	})
+}
+
+func TestCreateTimeoutContext(t *testing.T) {
+	t.Run("uses configured timeout", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.RequestTimeoutSeconds = 2
+		start := time.Now()
+
+		ctx, cancel := createTimeoutContext(cfg)
+		defer cancel()
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("context should have a deadline")
+		}
+		until := deadline.Sub(start)
+		if until < 1500*time.Millisecond || until > 3*time.Second {
+			t.Fatalf("deadline delta = %v, expected around 2s", until)
+		}
+	})
+
+	t.Run("falls back to default timeout", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.RequestTimeoutSeconds = 0
+		start := time.Now()
+
+		ctx, cancel := createTimeoutContext(cfg)
+		defer cancel()
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("context should have a deadline")
+		}
+		until := deadline.Sub(start)
+		if until < 25*time.Second || until > 35*time.Second {
+			t.Fatalf("deadline delta = %v, expected around 30s", until)
+		}
+	})
+}
+
+func TestCreateProvider(t *testing.T) {
+	t.Run("invalid api key", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.APIKey = "invalid"
+		_, err := createProvider(cfg)
+		if err == nil {
+			t.Fatal("createProvider() expected error for invalid key")
+		}
+	})
+
+	t.Run("unknown provider", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.Provider = "unknown"
+		_, err := createProvider(cfg)
+		if err == nil || !strings.Contains(err.Error(), "unknown provider") {
+			t.Fatalf("createProvider() expected unknown provider error, got %v", err)
+		}
+	})
+
+	t.Run("openai provider", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.Provider = "openai"
+		prov, err := createProvider(cfg)
+		if err != nil {
+			t.Fatalf("createProvider() error = %v", err)
+		}
+		if prov == nil {
+			t.Fatal("createProvider() returned nil provider")
+		}
+	})
+
+	t.Run("anthropic provider", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.Provider = "anthropic"
+		cfg.APIKey = ""
+		cfg.AnthropicAPIKey = "sk-ant-12345678901234567890"
+		prov, err := createProvider(cfg)
+		if err != nil {
+			t.Fatalf("createProvider() error = %v", err)
+		}
+		if prov == nil {
+			t.Fatal("createProvider() returned nil provider")
+		}
+	})
+}
+
+func TestUpdateMessageHandling(t *testing.T) {
+	t.Run("textPastedMsg sets loading state and resets outputs", func(t *testing.T) {
+		m := newTestModel(t, newTestConfig())
+		m.correctedText = "old"
+		m.translatedText = "old translation"
+
+		nextModelAny, cmd := m.Update(textPastedMsg{text: " hello \n"})
+		next := nextModelAny.(Model)
+
+		if next.originalText != " hello" {
+			t.Fatalf("originalText = %q, want %q", next.originalText, " hello")
+		}
+		if next.correctedText != "" {
+			t.Fatalf("correctedText = %q, want empty", next.correctedText)
+		}
+		if next.translatedText != "" {
+			t.Fatalf("translatedText = %q, want empty", next.translatedText)
+		}
+		if !next.isLoading {
+			t.Fatal("isLoading should be true")
+		}
+		if next.status != "[●] Correcting..." {
+			t.Fatalf("status = %q, want %q", next.status, "[●] Correcting...")
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil correction command")
+		}
+	})
+
+	t.Run("correctionDoneMsg without translator finishes", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.TranslationLanguage = ""
+		m := newTestModel(t, cfg)
+		m.isLoading = true
+
+		nextModelAny, cmd := m.Update(correctionDoneMsg{
+			original:  "orig \n",
+			corrected: "corr \n",
+		})
+		next := nextModelAny.(Model)
+
+		if next.originalText != "orig" || next.correctedText != "corr" {
+			t.Fatalf("unexpected trimmed values: original=%q corrected=%q", next.originalText, next.correctedText)
+		}
+		if next.isLoading {
+			t.Fatal("isLoading should be false after correctionDoneMsg")
+		}
+		if next.status != "✓ Done" {
+			t.Fatalf("status = %q, want %q", next.status, "✓ Done")
+		}
+		if cmd != nil {
+			t.Fatal("expected nil command when translator is disabled")
+		}
+	})
+
+	t.Run("correctionDoneMsg with translator starts translation", func(t *testing.T) {
+		cfg := newTestConfig()
+		cfg.TranslationLanguage = "french"
+		m := newTestModel(t, cfg)
+		m.isLoading = true
+
+		nextModelAny, cmd := m.Update(correctionDoneMsg{
+			original:  "hello",
+			corrected: "hello corrected",
+		})
+		next := nextModelAny.(Model)
+
+		if !next.isTranslating {
+			t.Fatal("isTranslating should be true when translator is configured")
+		}
+		if next.status != "✓ Done [●] Translating..." {
+			t.Fatalf("status = %q, want translation status", next.status)
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil translation command")
+		}
+	})
+
+	t.Run("errMsg updates error state", func(t *testing.T) {
+		m := newTestModel(t, newTestConfig())
+		m.isLoading = true
+
+		nextModelAny, _ := m.Update(errMsg{err: errors.New("boom")})
+		next := nextModelAny.(Model)
+
+		if next.error != "boom" {
+			t.Fatalf("error = %q, want %q", next.error, "boom")
+		}
+		if next.isLoading {
+			t.Fatal("isLoading should be false after error")
+		}
+		if !strings.Contains(next.status, "boom") {
+			t.Fatalf("status should include error text, got %q", next.status)
+		}
+	})
+
+	t.Run("status and stream chunk messages", func(t *testing.T) {
+		m := newTestModel(t, newTestConfig())
+
+		nextModelAny, _ := m.Update(statusMsg("running"))
+		next := nextModelAny.(Model)
+		if next.status != "running" {
+			t.Fatalf("status = %q, want %q", next.status, "running")
+		}
+
+		nextModelAny, _ = next.Update(streamChunkMsg{chunk: "abc"})
+		next = nextModelAny.(Model)
+		if next.correctedText != "abc" {
+			t.Fatalf("correctedText = %q, want %q", next.correctedText, "abc")
+		}
+
+		nextModelAny, _ = next.Update(translationChunkMsg{chunk: "xyz"})
+		next = nextModelAny.(Model)
+		if next.translatedText != "xyz" {
+			t.Fatalf("translatedText = %q, want %q", next.translatedText, "xyz")
+		}
+	})
+
+	t.Run("translationDoneMsg finalizes translation status", func(t *testing.T) {
+		m := newTestModel(t, newTestConfig())
+		m.isTranslating = true
+		m.status = "✓ Done [●] Translating..."
+
+		nextModelAny, _ := m.Update(translationDoneMsg{translated: " bonjour \n"})
+		next := nextModelAny.(Model)
+
+		if next.translatedText != " bonjour" {
+			t.Fatalf("translatedText = %q, want %q", next.translatedText, " bonjour")
+		}
+		if next.isTranslating {
+			t.Fatal("isTranslating should be false after translationDoneMsg")
+		}
+		if next.status != "✓ Done ✓ Translated" {
+			t.Fatalf("status = %q, want %q", next.status, "✓ Done ✓ Translated")
+		}
+	})
+}
+
+func TestUpdateWindowSize(t *testing.T) {
+	m := newTestModel(t, newTestConfig())
+	nextAny, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	next := nextAny.(Model)
+
+	if next.width != 120 || next.height != 40 {
+		t.Fatalf("window size not updated: got %dx%d", next.width, next.height)
 	}
 }

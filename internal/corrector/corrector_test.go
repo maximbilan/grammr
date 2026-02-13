@@ -1,10 +1,15 @@
 package corrector
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maximbilan/grammr/internal/provider"
+	"github.com/maximbilan/grammr/internal/ratelimit"
+	"github.com/maximbilan/grammr/internal/validation"
 )
 
 func TestNew(t *testing.T) {
@@ -113,67 +118,67 @@ func TestNew(t *testing.T) {
 
 func TestBuildPrompt(t *testing.T) {
 	tests := []struct {
-		name     string
-		style    string
-		text     string
+		name      string
+		style     string
+		text      string
 		wantStyle string // Expected style used (may differ if invalid)
-		wantText string // Text that should be in prompt
+		wantText  string // Text that should be in prompt
 	}{
 		{
-			name:     "casual style",
-			style:    "casual",
-			text:     "Hello world",
+			name:      "casual style",
+			style:     "casual",
+			text:      "Hello world",
 			wantStyle: "casual",
-			wantText: "Hello world",
+			wantText:  "Hello world",
 		},
 		{
-			name:     "formal style",
-			style:    "formal",
-			text:     "Fix this text",
+			name:      "formal style",
+			style:     "formal",
+			text:      "Fix this text",
 			wantStyle: "formal",
-			wantText: "Fix this text",
+			wantText:  "Fix this text",
 		},
 		{
-			name:     "academic style",
-			style:    "academic",
-			text:     "Academic writing",
+			name:      "academic style",
+			style:     "academic",
+			text:      "Academic writing",
 			wantStyle: "academic",
-			wantText: "Academic writing",
+			wantText:  "Academic writing",
 		},
 		{
-			name:     "technical style",
-			style:    "technical",
-			text:     "Technical documentation",
+			name:      "technical style",
+			style:     "technical",
+			text:      "Technical documentation",
 			wantStyle: "technical",
-			wantText: "Technical documentation",
+			wantText:  "Technical documentation",
 		},
 		{
-			name:     "invalid style defaults to casual",
-			style:    "invalid-style",
-			text:     "Some text",
+			name:      "invalid style defaults to casual",
+			style:     "invalid-style",
+			text:      "Some text",
 			wantStyle: "casual", // Should default to casual
-			wantText: "Some text",
+			wantText:  "Some text",
 		},
 		{
-			name:     "empty style defaults to casual",
-			style:    "",
-			text:     "Some text",
+			name:      "empty style defaults to casual",
+			style:     "",
+			text:      "Some text",
 			wantStyle: "casual",
-			wantText: "Some text",
+			wantText:  "Some text",
 		},
 		{
-			name:     "text with newlines",
-			style:    "casual",
-			text:     "Line 1\nLine 2\nLine 3",
+			name:      "text with newlines",
+			style:     "casual",
+			text:      "Line 1\nLine 2\nLine 3",
 			wantStyle: "casual",
-			wantText: "Line 1\nLine 2\nLine 3",
+			wantText:  "Line 1\nLine 2\nLine 3",
 		},
 		{
-			name:     "empty text",
-			style:    "casual",
-			text:     "",
+			name:      "empty text",
+			style:     "casual",
+			text:      "",
 			wantStyle: "casual",
-			wantText: "",
+			wantText:  "",
 		},
 	}
 
@@ -299,5 +304,112 @@ func TestBuildPromptWithLanguage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCorrect(t *testing.T) {
+	mockProv := provider.NewMockProvider()
+	c, err := New(mockProv, "gpt-4o", "casual", "english")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	text := "i are happy"
+	prompt := c.buildPrompt(text)
+	mockProv.SetResponse(prompt, "I am happy.")
+
+	got, err := c.Correct(context.Background(), text)
+	if err != nil {
+		t.Fatalf("Correct() error = %v", err)
+	}
+	if got != "I am happy." {
+		t.Fatalf("Correct() = %q, want %q", got, "I am happy.")
+	}
+}
+
+func TestStreamCorrect(t *testing.T) {
+	mockProv := provider.NewMockProvider()
+	c, err := New(mockProv, "gpt-4o", "formal", "english")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	text := "hello world"
+	prompt := c.buildPrompt(text)
+	mockProv.SetResponse(prompt, "Hello, world.")
+
+	var chunks []string
+	err = c.StreamCorrect(context.Background(), text, func(chunk string) {
+		chunks = append(chunks, chunk)
+	})
+	if err != nil {
+		t.Fatalf("StreamCorrect() error = %v", err)
+	}
+	if strings.Join(chunks, "") != "Hello, world." {
+		t.Fatalf("StreamCorrect() output = %q, want %q", strings.Join(chunks, ""), "Hello, world.")
+	}
+}
+
+func TestCorrectValidationAndRateLimit(t *testing.T) {
+	mockProv := provider.NewMockProvider()
+	rl := ratelimit.New(1, time.Minute, time.Second)
+
+	c, err := NewWithRateLimit(mockProv, "gpt-4o", "casual", "english", rl)
+	if err != nil {
+		t.Fatalf("NewWithRateLimit() error = %v", err)
+	}
+
+	t.Run("empty text", func(t *testing.T) {
+		_, err := c.Correct(context.Background(), "")
+		if err == nil {
+			t.Fatal("Correct() should fail for empty text")
+		}
+	})
+
+	t.Run("text too long", func(t *testing.T) {
+		longText := strings.Repeat("x", validation.MaxInputLength+1)
+		_, err := c.Correct(context.Background(), longText)
+		if err == nil {
+			t.Fatal("Correct() should fail for oversized text")
+		}
+	})
+
+	t.Run("rate limit cancellation", func(t *testing.T) {
+		// Consume first token so second call blocks on limiter.
+		if err := rl.Wait(context.Background()); err != nil {
+			t.Fatalf("initial Wait() failed: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := c.Correct(ctx, "hello")
+		if err == nil {
+			t.Fatal("Correct() should fail on cancelled context")
+		}
+		if !strings.Contains(err.Error(), "rate limit error") {
+			t.Fatalf("expected wrapped rate limit error, got %v", err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	})
+}
+
+func TestStreamCorrectValidationErrors(t *testing.T) {
+	mockProv := provider.NewMockProvider()
+	c, err := New(mockProv, "gpt-4o", "casual", "english")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	err = c.StreamCorrect(context.Background(), "", func(string) {})
+	if err == nil {
+		t.Fatal("StreamCorrect() should fail for empty text")
+	}
+
+	var nilChunk func(string)
+	err = c.StreamCorrect(context.Background(), "hello", nilChunk)
+	if err == nil {
+		t.Fatal("StreamCorrect() should fail for nil callback")
 	}
 }

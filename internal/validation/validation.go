@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -35,8 +36,21 @@ func ValidateTextInput(text string, onChunk interface{}) error {
 	if len(text) > MaxInputLength {
 		return fmt.Errorf("text exceeds maximum length of %d characters (got %d)", MaxInputLength, len(text))
 	}
-	if onChunk == nil {
+	if isNilValue(onChunk) {
 		return fmt.Errorf("onChunk callback cannot be nil")
 	}
 	return nil
+}
+
+func isNilValue(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }

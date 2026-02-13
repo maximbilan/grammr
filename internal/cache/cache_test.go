@@ -371,3 +371,85 @@ func TestGetInvalidJSON(t *testing.T) {
 		t.Errorf("Get() invalid JSON = %v, want empty string", got)
 	}
 }
+
+func TestNewRejectsNegativeTTL(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		os.Setenv("HOME", originalHome)
+	}()
+	os.Setenv("HOME", tmpDir)
+
+	_, err := New(-1)
+	if err == nil {
+		t.Fatal("New(-1) should return an error")
+	}
+}
+
+func TestSetRejectsInvalidHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
+	cache := &Cache{
+		dir:    tmpDir,
+		ttl:    24 * time.Hour,
+		encKey: keyHash[:],
+	}
+
+	err := cache.Set("../invalid", "orig", "corr")
+	if err == nil {
+		t.Fatal("Set() with invalid hash should return error")
+	}
+}
+
+func TestGetRejectsInvalidHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
+	cache := &Cache{
+		dir:    tmpDir,
+		ttl:    24 * time.Hour,
+		encKey: keyHash[:],
+	}
+
+	if got := cache.Get("../not-a-hash"); got != "" {
+		t.Fatalf("Get() with invalid hash = %q, want empty", got)
+	}
+}
+
+func TestCachePermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		os.Setenv("HOME", originalHome)
+	}()
+	os.Setenv("HOME", tmpDir)
+
+	cache, err := New(7)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	original := "Hello world"
+	corrected := "Hello, world!"
+	hash := cache.Hash(original)
+
+	if err := cache.Set(hash, original, corrected); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	dirInfo, err := os.Stat(cache.dir)
+	if err != nil {
+		t.Fatalf("failed to stat cache dir: %v", err)
+	}
+	if dirInfo.Mode().Perm()&0077 != 0 {
+		t.Fatalf("cache directory should not be accessible by group/others, got mode %o", dirInfo.Mode().Perm())
+	}
+
+	filePath := filepath.Join(cache.dir, hash+".json")
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		t.Fatalf("failed to stat cache file: %v", err)
+	}
+	if fileInfo.Mode().Perm()&0077 != 0 {
+		t.Fatalf("cache file should not be accessible by group/others, got mode %o", fileInfo.Mode().Perm())
+	}
+}
