@@ -3,14 +3,14 @@ package provider
 import (
 	"context"
 	"fmt"
-	"io"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 // OpenAIProvider implements Provider using OpenAI's API
 type OpenAIProvider struct {
-	client *openai.Client
+	client openai.Client
 }
 
 // NewOpenAIProvider creates a new OpenAI provider
@@ -19,53 +19,50 @@ func NewOpenAIProvider(apiKey string) (*OpenAIProvider, error) {
 		return nil, fmt.Errorf("API key is required")
 	}
 	return &OpenAIProvider{
-		client: openai.NewClient(apiKey),
+		client: openai.NewClient(option.WithAPIKey(apiKey)),
 	}, nil
 }
 
 // StreamChat streams a chat completion response
 func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages []Message, onChunk func(string)) error {
-	openaiMessages := make([]openai.ChatCompletionMessage, len(messages))
-	for i, msg := range messages {
-		openaiMessages[i] = openai.ChatCompletionMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+	// Convert messages to OpenAI format
+	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, msg := range messages {
+		switch msg.Role {
+		case RoleUser:
+			openaiMessages = append(openaiMessages, openai.UserMessage(msg.Content))
+		case RoleAssistant:
+			openaiMessages = append(openaiMessages, openai.AssistantMessage(msg.Content))
+		case RoleSystem:
+			// System messages are included in the messages array
+			openaiMessages = append(openaiMessages, openai.SystemMessage(msg.Content))
 		}
 	}
 
-	req := openai.ChatCompletionRequest{
-		Model:    model,
+	params := openai.ChatCompletionNewParams{
+		Model:    openai.ChatModel(model),
 		Messages: openaiMessages,
-		Stream:   true,
 	}
 
-	stream, err := p.client.CreateChatCompletionStream(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-	defer stream.Close()
+	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 
-	for {
+	for stream.Next() {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context cancelled: %w", ctx.Err())
 		default:
 		}
 
-		response, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("stream receive error: %w", err)
-		}
-
-		if len(response.Choices) > 0 {
-			chunk := response.Choices[0].Delta.Content
-			if chunk != "" {
-				onChunk(chunk)
+		chunk := stream.Current()
+		if len(chunk.Choices) > 0 {
+			if chunk.Choices[0].Delta.Content != "" {
+				onChunk(chunk.Choices[0].Delta.Content)
 			}
 		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return fmt.Errorf("stream error: %w", err)
 	}
 
 	return nil
@@ -73,20 +70,26 @@ func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages 
 
 // Chat performs a non-streaming chat completion
 func (p *OpenAIProvider) Chat(ctx context.Context, model string, messages []Message) (string, error) {
-	openaiMessages := make([]openai.ChatCompletionMessage, len(messages))
-	for i, msg := range messages {
-		openaiMessages[i] = openai.ChatCompletionMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+	// Convert messages to OpenAI format
+	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, msg := range messages {
+		switch msg.Role {
+		case RoleUser:
+			openaiMessages = append(openaiMessages, openai.UserMessage(msg.Content))
+		case RoleAssistant:
+			openaiMessages = append(openaiMessages, openai.AssistantMessage(msg.Content))
+		case RoleSystem:
+			// System messages are included in the messages array
+			openaiMessages = append(openaiMessages, openai.SystemMessage(msg.Content))
 		}
 	}
 
-	req := openai.ChatCompletionRequest{
-		Model:    model,
+	params := openai.ChatCompletionNewParams{
+		Model:    openai.ChatModel(model),
 		Messages: openaiMessages,
 	}
 
-	resp, err := p.client.CreateChatCompletion(ctx, req)
+	resp, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("failed to create completion: %w", err)
 	}
@@ -95,5 +98,11 @@ func (p *OpenAIProvider) Chat(ctx context.Context, model string, messages []Mess
 		return "", fmt.Errorf("no response from API")
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	// Extract content from the message
+	content := resp.Choices[0].Message.Content
+	if content == "" {
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	return content, nil
 }

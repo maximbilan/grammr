@@ -3,18 +3,18 @@ module github.com/maximbilan/grammr
 go 1.23.0
 
 require (
+	github.com/anthropics/anthropic-sdk-go v1.22.1
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.9.1
-	github.com/sashabaranov/go-openai v1.20.0
+	github.com/openai/openai-go v1.12.0
 	github.com/sergi/go-diff v1.3.1
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 )
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.22.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
