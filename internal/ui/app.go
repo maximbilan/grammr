@@ -26,6 +26,34 @@ func trimTrailingWhitespace(text string) string {
 	return strings.TrimRight(text, " \t\n\r")
 }
 
+// wrapText wraps text to fit within the specified width, respecting word boundaries when possible
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var wrapped strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			wrapped.WriteString("\n")
+		}
+		for len(line) > width {
+			// Try to find a space to break at
+			breakPos := width
+			if spacePos := strings.LastIndex(line[:width], " "); spacePos > width/2 {
+				breakPos = spacePos + 1
+			}
+			wrapped.WriteString(line[:breakPos])
+			wrapped.WriteString("\n")
+			line = strings.TrimLeft(line[breakPos:], " ")
+		}
+		if len(line) > 0 {
+			wrapped.WriteString(line)
+		}
+	}
+	return wrapped.String()
+}
+
 // createRateLimiter creates a rate limiter from config, or returns nil if disabled
 func createRateLimiter(cfg *config.Config) *ratelimit.RateLimiter {
 	if !cfg.RateLimitEnabled {
@@ -379,22 +407,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		editorWidth := msg.Width - 4
-		if editorWidth < 20 {
-			editorWidth = 20
-		}
-		editorHeight := (msg.Height - 10) / 2
-		if editorHeight < 5 {
-			editorHeight = 5
-		}
-		m.originalEditor.SetWidth(editorWidth)
-		m.originalEditor.SetHeight(editorHeight)
-		m.correctedEditor.SetWidth(editorWidth)
-		m.correctedEditor.SetHeight(editorHeight)
-		m.translationEditor.SetWidth(editorWidth)
-		m.translationEditor.SetHeight(editorHeight)
-		m.viewport.Width = editorWidth
-		m.viewport.Height = msg.Height - 10
+		m = m.updateEditorDimensions()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -526,6 +539,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "e", "E":
 		if m.correctedText != "" {
+			m.correctedEditor.SetValue(m.correctedText)
 			m.mode = ModeEditCorrected
 			m.correctedEditor.Focus()
 			return m, textarea.Blink
@@ -533,6 +547,7 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "o", "O":
 		if m.originalText != "" {
+			m.originalEditor.SetValue(m.originalText)
 			m.mode = ModeEditOriginal
 			m.originalEditor.Focus()
 			return m, textarea.Blink
@@ -602,27 +617,51 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateEditorDimensions updates editor dimensions based on current window size
+func (m Model) updateEditorDimensions() Model {
+	editorWidth := m.width - 4
+	if editorWidth < 20 {
+		editorWidth = 20
+	}
+	editorHeight := (m.height - 10) / 2
+	if editorHeight < 5 {
+		editorHeight = 5
+	}
+	m.originalEditor.SetWidth(editorWidth)
+	m.originalEditor.SetHeight(editorHeight)
+	m.correctedEditor.SetWidth(editorWidth)
+	m.correctedEditor.SetHeight(editorHeight)
+	m.translationEditor.SetWidth(editorWidth)
+	m.translationEditor.SetHeight(editorHeight)
+	m.viewport.Width = editorWidth
+	m.viewport.Height = m.height - 10
+	return m
+}
+
 func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		currentMode := m.mode
-		m.mode = ModeGlobal
-		if currentMode == ModeEditOriginal {
+		// Sync editor values with text fields before exiting
+		if m.mode == ModeEditOriginal {
 			m.originalText = trimTrailingWhitespace(m.originalEditor.Value())
-		} else if currentMode == ModeEditCorrected {
+		} else if m.mode == ModeEditCorrected {
 			m.correctedText = trimTrailingWhitespace(m.correctedEditor.Value())
-		} else if currentMode == ModeEditTranslation {
+		} else if m.mode == ModeEditTranslation {
 			m.translatedText = trimTrailingWhitespace(m.translationEditor.Value())
 		}
+		// Blur all editors and exit edit mode
 		m.originalEditor.Blur()
 		m.correctedEditor.Blur()
 		m.translationEditor.Blur()
+		m.mode = ModeGlobal
 		return m, nil
 	case "ctrl+s":
 		if m.mode == ModeEditOriginal {
 			m.originalText = trimTrailingWhitespace(m.originalEditor.Value())
-			m.mode = ModeGlobal
 			m.originalEditor.Blur()
+			m.correctedEditor.Blur()
+			m.translationEditor.Blur()
+			m.mode = ModeGlobal
 			m.isLoading = true
 			m.status = "[●] Correcting..."
 			return m, m.correctText(m.originalText)
@@ -847,6 +886,10 @@ func (m Model) View() string {
 		return m.renderReviewMode()
 	}
 
+	if m.mode == ModeEditOriginal || m.mode == ModeEditCorrected || m.mode == ModeEditTranslation {
+		return m.renderEditMode()
+	}
+
 	// Ensure we have valid dimensions
 	if m.width == 0 {
 		m.width = 80
@@ -915,10 +958,8 @@ func (m Model) View() string {
 
 	s.WriteString(originalLabel)
 	s.WriteString("\n")
-	if m.mode == ModeEditOriginal {
-		s.WriteString(m.originalEditor.View())
-	} else {
-		boxWidth := m.width - 4
+	// Render box (edit mode is handled by renderEditMode())
+	boxWidth := m.width - 4
 		if boxWidth < 20 {
 			boxWidth = 20
 		}
@@ -941,14 +982,19 @@ func (m Model) View() string {
 		if boxHeight < 3 {
 			boxHeight = 3 // Minimum box height
 		}
+		// Wrap text to fit within box width (accounting for padding)
+		contentWidth := boxWidth - 4 // Account for padding (2 on each side)
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		wrappedText := wrapText(m.originalText, contentWidth)
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("8")).
 			Padding(1, 2).
 			Width(boxWidth).
 			Height(boxHeight)
-		s.WriteString(boxStyle.Render(m.originalText))
-	}
+		s.WriteString(boxStyle.Render(wrappedText))
 	s.WriteString("\n\n")
 
 	// Corrected text
@@ -967,38 +1013,29 @@ func (m Model) View() string {
 
 	s.WriteString(correctedLabel)
 	s.WriteString("\n")
-	if m.mode == ModeEditCorrected {
-		s.WriteString(m.correctedEditor.View())
-	} else {
-		boxWidth := m.width - 4
-		if boxWidth < 20 {
-			boxWidth = 20
-		}
-		hasTranslation := m.translator != nil
-		fixedLines := 11
-		if hasTranslation {
-			fixedLines = 14
-		}
-		availableHeight := m.height - fixedLines
-		if availableHeight < 10 {
-			availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
-		}
-		numBoxes := 2
-		if hasTranslation {
-			numBoxes = 3
-		}
-		boxHeight := availableHeight / numBoxes
-		if boxHeight < 3 {
-			boxHeight = 3 // Minimum box height
-		}
-		boxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("8")).
-			Padding(1, 2).
-			Width(boxWidth).
-			Height(boxHeight)
-
-		content := m.correctedText
+	// Render box (edit mode is handled by renderEditMode())
+	boxWidth = m.width - 4
+	if boxWidth < 20 {
+		boxWidth = 20
+	}
+	hasTranslation = m.translator != nil
+	fixedLines = 11
+	if hasTranslation {
+		fixedLines = 14
+	}
+	availableHeight = m.height - fixedLines
+	if availableHeight < 10 {
+		availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
+	}
+	numBoxes = 2
+	if hasTranslation {
+		numBoxes = 3
+	}
+	boxHeight = availableHeight / numBoxes
+	if boxHeight < 3 {
+		boxHeight = 3 // Minimum box height
+	}
+	content := m.correctedText
 
 		// Show loading indicator in the box if loading
 		if m.isLoading && content == "" {
@@ -1010,10 +1047,23 @@ func (m Model) View() string {
 		} else if m.showDiff && m.originalText != "" && m.correctedText != "" && m.mode != ModeReviewDiff {
 			// Only show diff view when not in review mode (review mode has its own display)
 			content = renderDiff(m.originalText, m.correctedText)
+		} else {
+			// Wrap text to fit within box width (accounting for padding)
+			contentWidth := boxWidth - 4 // Account for padding (2 on each side)
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			content = wrapText(content, contentWidth)
 		}
 
-		s.WriteString(boxStyle.Render(content))
-	}
+	boxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(1, 2).
+		Width(boxWidth).
+		Height(boxHeight)
+
+	s.WriteString(boxStyle.Render(content))
 	s.WriteString("\n\n")
 
 	// Translation text (only show if translator is configured)
@@ -1033,50 +1083,54 @@ func (m Model) View() string {
 
 		s.WriteString(translationLabel)
 		s.WriteString("\n")
-		if m.mode == ModeEditTranslation {
-			s.WriteString(m.translationEditor.View())
-		} else {
-			boxWidth := m.width - 4
-			if boxWidth < 20 {
-				boxWidth = 20
-			}
-			hasTranslation := m.translator != nil
-			fixedLines := 11
-			if hasTranslation {
-				fixedLines = 14
-			}
-			availableHeight := m.height - fixedLines
-			if availableHeight < 10 {
-				availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
-			}
-			numBoxes := 2
-			if hasTranslation {
-				numBoxes = 3
-			}
-			boxHeight := availableHeight / numBoxes
-			if boxHeight < 3 {
-				boxHeight = 3 // Minimum box height
-			}
-			boxStyle := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("8")).
-				Padding(1, 2).
-				Width(boxWidth).
-				Height(boxHeight)
-
-			content := m.translatedText
-
-			// Show loading indicator in the box if translating
-			if m.isTranslating && content == "" {
-				loadingText := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("11")).
-					Italic(true).
-					Render("Translating...")
-				content = loadingText
-			}
-
-			s.WriteString(boxStyle.Render(content))
+		// Render box (edit mode is handled by renderEditMode())
+		boxWidth = m.width - 4
+		if boxWidth < 20 {
+			boxWidth = 20
 		}
+		hasTranslation = m.translator != nil
+		fixedLines = 11
+		if hasTranslation {
+			fixedLines = 14
+		}
+		availableHeight = m.height - fixedLines
+		if availableHeight < 10 {
+			availableHeight = m.height - (fixedLines - 2) // Minimum space for very small terminals
+		}
+		numBoxes = 2
+		if hasTranslation {
+			numBoxes = 3
+		}
+		boxHeight = availableHeight / numBoxes
+		if boxHeight < 3 {
+			boxHeight = 3 // Minimum box height
+		}
+		boxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8")).
+			Padding(1, 2).
+			Width(boxWidth).
+			Height(boxHeight)
+
+		translationContent := m.translatedText
+
+		// Show loading indicator in the box if translating
+		if m.isTranslating && translationContent == "" {
+			loadingText := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11")).
+				Italic(true).
+				Render("Translating...")
+			translationContent = loadingText
+		} else {
+			// Wrap text to fit within box width (accounting for padding)
+			contentWidth := boxWidth - 4 // Account for padding (2 on each side)
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			translationContent = wrapText(translationContent, contentWidth)
+		}
+
+		s.WriteString(boxStyle.Render(translationContent))
 		s.WriteString("\n\n")
 	}
 
@@ -1282,6 +1336,116 @@ func (m Model) renderReviewMode() string {
 		Padding(0, 1)
 
 	footer := footerStyle.Render("Tab: Apply  Space: Skip  Esc: Exit")
+	s.WriteString(strings.Repeat("─", m.width))
+	s.WriteString("\n")
+	s.WriteString(footer)
+
+	return s.String()
+}
+
+func (m Model) renderEditMode() string {
+	// Ensure we have valid dimensions
+	if m.width == 0 {
+		m.width = 80
+	}
+	if m.height == 0 {
+		m.height = 24
+	}
+
+	var s strings.Builder
+
+	// Header
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("6")).
+		Padding(0, 1)
+
+	statusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Padding(0, 1)
+
+	// Render style indicator with visual styling
+	styleIndicator := m.renderStyleIndicator()
+
+	var headerTitle string
+	var editor *textarea.Model
+	var labelText string
+	var labelColor string
+
+	if m.mode == ModeEditOriginal {
+		headerTitle = "grammr - Edit Original Text"
+		editor = &m.originalEditor
+		labelText = "Original Text"
+		labelColor = "4"
+	} else if m.mode == ModeEditCorrected {
+		headerTitle = "grammr - Edit Corrected Text"
+		editor = &m.correctedEditor
+		labelText = "Corrected Text"
+		labelColor = "2"
+	} else if m.mode == ModeEditTranslation {
+		headerTitle = "grammr - Edit Translation"
+		editor = &m.translationEditor
+		labelText = "Translation"
+		labelColor = "5"
+	}
+
+	headerLeft := headerStyle.Render(headerTitle) + " " + styleIndicator
+	status := statusStyle.Render(m.status)
+
+	// Check if header fits on one line
+	headerWidth := lipgloss.Width(headerLeft)
+	statusWidth := lipgloss.Width(status)
+
+	if headerWidth+statusWidth+2 <= m.width {
+		// Fits on one line
+		s.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, headerLeft, status))
+	} else {
+		// Put status on next line if header is too wide
+		s.WriteString(headerLeft)
+		s.WriteString("\n")
+		s.WriteString(status)
+	}
+	s.WriteString("\n")
+	s.WriteString(strings.Repeat("─", m.width))
+	s.WriteString("\n\n")
+
+	// Label
+	labelStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(labelColor))
+
+	s.WriteString(labelStyle.Render(labelText))
+	s.WriteString("\n\n")
+
+	// Editor - fill most of the screen
+	editorWidth := m.width - 4
+	if editorWidth < 20 {
+		editorWidth = 20
+	}
+	// Account for: header (1-2 lines), separator (1), spacing (1), label (1), spacing (1), separator (1), footer (1)
+	// Total: ~6-7 lines for fixed content
+	availableHeight := m.height - 7
+	if availableHeight < 10 {
+		availableHeight = m.height - 5 // Minimum space for very small terminals
+	}
+	editorHeight := availableHeight
+	if editorHeight < 5 {
+		editorHeight = 5 // Minimum editor height
+
+	}
+	editor.SetWidth(editorWidth)
+	editor.SetHeight(editorHeight)
+
+	s.WriteString(editor.View())
+
+	s.WriteString("\n\n")
+
+	// Footer
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Padding(0, 1)
+
+	footer := footerStyle.Render("Esc: Exit  Ctrl+S: Save and re-correct (original only)")
 	s.WriteString(strings.Repeat("─", m.width))
 	s.WriteString("\n")
 	s.WriteString(footer)
