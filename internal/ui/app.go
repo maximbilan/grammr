@@ -14,6 +14,7 @@ import (
 	"github.com/maximbilan/grammr/internal/clipboard"
 	"github.com/maximbilan/grammr/internal/config"
 	"github.com/maximbilan/grammr/internal/corrector"
+	"github.com/maximbilan/grammr/internal/ratelimit"
 	"github.com/maximbilan/grammr/internal/translator"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -298,14 +299,28 @@ func NewModel(cfg *config.Config) (*Model, error) {
 		}
 	}
 
-	cor, err := corrector.New(cfg.APIKey, cfg.Model, cfg.Mode, cfg.Language)
+	// Create rate limiter if enabled
+	var rateLimiter *ratelimit.RateLimiter
+	if cfg.RateLimitEnabled {
+		maxRequests := cfg.RateLimitRequests
+		if maxRequests <= 0 {
+			maxRequests = 60 // Default
+		}
+		windowSeconds := cfg.RateLimitWindow
+		if windowSeconds <= 0 {
+			windowSeconds = 60 // Default: per minute
+		}
+		rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
+	}
+
+	cor, err := corrector.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.Mode, cfg.Language, rateLimiter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create corrector: %w", err)
 	}
 
 	var trans *translator.Translator
 	if cfg.TranslationLanguage != "" {
-		trans, err = translator.New(cfg.APIKey, cfg.Model, cfg.TranslationLanguage)
+		trans, err = translator.NewWithRateLimit(cfg.APIKey, cfg.Model, cfg.TranslationLanguage, rateLimiter)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create translator: %w", err)
 		}
@@ -558,8 +573,20 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "1":
 		m.config.Mode = "casual"
+		var rateLimiter *ratelimit.RateLimiter
+		if m.config.RateLimitEnabled {
+			maxRequests := m.config.RateLimitRequests
+			if maxRequests <= 0 {
+				maxRequests = 60
+			}
+			windowSeconds := m.config.RateLimitWindow
+			if windowSeconds <= 0 {
+				windowSeconds = 60
+			}
+			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
+		}
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "casual", m.config.Language)
+		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "casual", m.config.Language, rateLimiter)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
@@ -567,8 +594,20 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "2":
 		m.config.Mode = "formal"
+		var rateLimiter *ratelimit.RateLimiter
+		if m.config.RateLimitEnabled {
+			maxRequests := m.config.RateLimitRequests
+			if maxRequests <= 0 {
+				maxRequests = 60
+			}
+			windowSeconds := m.config.RateLimitWindow
+			if windowSeconds <= 0 {
+				windowSeconds = 60
+			}
+			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
+		}
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "formal", m.config.Language)
+		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "formal", m.config.Language, rateLimiter)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
@@ -576,8 +615,20 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "3":
 		m.config.Mode = "academic"
+		var rateLimiter *ratelimit.RateLimiter
+		if m.config.RateLimitEnabled {
+			maxRequests := m.config.RateLimitRequests
+			if maxRequests <= 0 {
+				maxRequests = 60
+			}
+			windowSeconds := m.config.RateLimitWindow
+			if windowSeconds <= 0 {
+				windowSeconds = 60
+			}
+			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
+		}
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "academic", m.config.Language)
+		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "academic", m.config.Language, rateLimiter)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}
@@ -585,8 +636,20 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "4":
 		m.config.Mode = "technical"
+		var rateLimiter *ratelimit.RateLimiter
+		if m.config.RateLimitEnabled {
+			maxRequests := m.config.RateLimitRequests
+			if maxRequests <= 0 {
+				maxRequests = 60
+			}
+			windowSeconds := m.config.RateLimitWindow
+			if windowSeconds <= 0 {
+				windowSeconds = 60
+			}
+			rateLimiter = ratelimit.New(maxRequests, time.Duration(windowSeconds)*time.Second, 100*time.Millisecond)
+		}
 		var err error
-		m.corrector, err = corrector.New(m.config.APIKey, m.config.Model, "technical", m.config.Language)
+		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "technical", m.config.Language, rateLimiter)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err: err} }
 		}

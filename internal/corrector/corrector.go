@@ -5,17 +5,30 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/maximbilan/grammr/internal/ratelimit"
 	"github.com/sashabaranov/go-openai"
 )
 
+const (
+	// MaxInputLength is the maximum allowed length for input text (100K characters)
+	// This prevents excessive API costs and potential memory issues
+	MaxInputLength = 100000
+)
+
 type Corrector struct {
-	client   *openai.Client
-	model    string
-	mode     string
-	language string
+	client     *openai.Client
+	model      string
+	mode       string
+	language   string
+	rateLimiter *ratelimit.RateLimiter
 }
 
 func New(apiKey, model, mode, language string) (*Corrector, error) {
+	return NewWithRateLimit(apiKey, model, mode, language, nil)
+}
+
+// NewWithRateLimit creates a new Corrector with an optional rate limiter
+func NewWithRateLimit(apiKey, model, mode, language string, rateLimiter *ratelimit.RateLimiter) (*Corrector, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("API key is required")
 	}
@@ -42,10 +55,11 @@ func New(apiKey, model, mode, language string) (*Corrector, error) {
 	}
 
 	return &Corrector{
-		client:   openai.NewClient(apiKey),
-		model:    model,
-		mode:     mode,
-		language: language,
+		client:      openai.NewClient(apiKey),
+		model:       model,
+		mode:        mode,
+		language:    language,
+		rateLimiter: rateLimiter,
 	}, nil
 }
 
@@ -83,8 +97,19 @@ func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func
 		return fmt.Errorf("text cannot be empty")
 	}
 
+	if len(text) > MaxInputLength {
+		return fmt.Errorf("text exceeds maximum length of %d characters (got %d)", MaxInputLength, len(text))
+	}
+
 	if onChunk == nil {
 		return fmt.Errorf("onChunk callback cannot be nil")
+	}
+
+	// Apply rate limiting if enabled
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return fmt.Errorf("rate limit error: %w", err)
+		}
 	}
 
 	req := openai.ChatCompletionRequest{
@@ -137,6 +162,17 @@ func (c *Corrector) StreamCorrect(ctx context.Context, text string, onChunk func
 func (c *Corrector) Correct(ctx context.Context, text string) (string, error) {
 	if text == "" {
 		return "", fmt.Errorf("text cannot be empty")
+	}
+
+	if len(text) > MaxInputLength {
+		return "", fmt.Errorf("text exceeds maximum length of %d characters (got %d)", MaxInputLength, len(text))
+	}
+
+	// Apply rate limiting if enabled
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return "", fmt.Errorf("rate limit error: %w", err)
+		}
 	}
 
 	req := openai.ChatCompletionRequest{

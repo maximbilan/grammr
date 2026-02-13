@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -71,7 +72,8 @@ func TestNew(t *testing.T) {
 }
 
 func TestHash(t *testing.T) {
-	cache := &Cache{dir: "/tmp", ttl: 24 * time.Hour}
+	keyHash := sha256.Sum256([]byte("/tmp.grammr.cache.key"))
+	cache := &Cache{dir: "/tmp", ttl: 24 * time.Hour, encKey: keyHash[:]}
 
 	tests := []struct {
 		name string
@@ -120,9 +122,12 @@ func TestHash(t *testing.T) {
 
 func TestSetAndGet(t *testing.T) {
 	tmpDir := t.TempDir()
+	// Derive encryption key from tmpDir (same way New() does)
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
 	cache := &Cache{
-		dir: tmpDir,
-		ttl: 24 * time.Hour,
+		dir:    tmpDir,
+		ttl:    24 * time.Hour,
+		encKey: keyHash[:],
 	}
 
 	tests := []struct {
@@ -185,15 +190,22 @@ func TestSetAndGet(t *testing.T) {
 					return
 				}
 
-				// Verify file content
+				// Verify file content (should be encrypted)
 				data, err := os.ReadFile(path)
 				if err != nil {
 					t.Errorf("Set() failed to read cache file: %v", err)
 					return
 				}
 
+				// Decrypt the data
+				decryptedData, err := cache.decrypt(data)
+				if err != nil {
+					t.Errorf("Set() failed to decrypt cache entry: %v", err)
+					return
+				}
+
 				var entry CacheEntry
-				if err := json.Unmarshal(data, &entry); err != nil {
+				if err := json.Unmarshal(decryptedData, &entry); err != nil {
 					t.Errorf("Set() failed to unmarshal cache entry: %v", err)
 					return
 				}
@@ -223,9 +235,11 @@ func TestSetAndGet(t *testing.T) {
 
 func TestGetNonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
 	cache := &Cache{
-		dir: tmpDir,
-		ttl: 24 * time.Hour,
+		dir:    tmpDir,
+		ttl:    24 * time.Hour,
+		encKey: keyHash[:],
 	}
 
 	// Test getting non-existent entry
@@ -237,16 +251,18 @@ func TestGetNonExistent(t *testing.T) {
 
 func TestGetExpired(t *testing.T) {
 	tmpDir := t.TempDir()
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
 	cache := &Cache{
-		dir: tmpDir,
-		ttl: 1 * time.Hour, // 1 hour TTL
+		dir:    tmpDir,
+		ttl:    1 * time.Hour, // 1 hour TTL
+		encKey: keyHash[:],
 	}
 
 	original := "Hello world"
 	corrected := "Hello, world"
 	hash := cache.Hash(original)
 
-	// Create an expired entry manually
+	// Create an expired entry manually (encrypted)
 	entry := CacheEntry{
 		Hash:      hash,
 		Original:  original,
@@ -259,8 +275,14 @@ func TestGetExpired(t *testing.T) {
 		t.Fatalf("Failed to marshal entry: %v", err)
 	}
 
+	// Encrypt the data before writing
+	encryptedData, err := cache.encrypt(data)
+	if err != nil {
+		t.Fatalf("Failed to encrypt entry: %v", err)
+	}
+
 	path := filepath.Join(tmpDir, hash+".json")
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, encryptedData, 0600); err != nil {
 		t.Fatalf("Failed to write cache file: %v", err)
 	}
 
@@ -278,16 +300,18 @@ func TestGetExpired(t *testing.T) {
 
 func TestGetNotExpired(t *testing.T) {
 	tmpDir := t.TempDir()
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
 	cache := &Cache{
-		dir: tmpDir,
-		ttl: 24 * time.Hour,
+		dir:    tmpDir,
+		ttl:    24 * time.Hour,
+		encKey: keyHash[:],
 	}
 
 	original := "Hello world"
 	corrected := "Hello, world"
 	hash := cache.Hash(original)
 
-	// Create a valid (not expired) entry manually
+	// Create a valid (not expired) entry manually (encrypted)
 	entry := CacheEntry{
 		Hash:      hash,
 		Original:  original,
@@ -300,8 +324,14 @@ func TestGetNotExpired(t *testing.T) {
 		t.Fatalf("Failed to marshal entry: %v", err)
 	}
 
+	// Encrypt the data before writing
+	encryptedData, err := cache.encrypt(data)
+	if err != nil {
+		t.Fatalf("Failed to encrypt entry: %v", err)
+	}
+
 	path := filepath.Join(tmpDir, hash+".json")
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, encryptedData, 0600); err != nil {
 		t.Fatalf("Failed to write cache file: %v", err)
 	}
 
@@ -319,9 +349,11 @@ func TestGetNotExpired(t *testing.T) {
 
 func TestGetInvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
+	keyHash := sha256.Sum256([]byte(tmpDir + ".grammr.cache.key"))
 	cache := &Cache{
-		dir: tmpDir,
-		ttl: 24 * time.Hour,
+		dir:    tmpDir,
+		ttl:    24 * time.Hour,
+		encKey: keyHash[:],
 	}
 
 	// Use a valid hash format (64 hex chars) but with invalid JSON content

@@ -29,6 +29,9 @@ type Config struct {
 	TranslationLanguage string `mapstructure:"translation_language"`
 	CacheEnabled      bool   `mapstructure:"cache_enabled"`
 	CacheTTLDays      int    `mapstructure:"cache_ttl_days"`
+	RateLimitEnabled  bool   `mapstructure:"rate_limit_enabled"`
+	RateLimitRequests int    `mapstructure:"rate_limit_requests"`
+	RateLimitWindow   int    `mapstructure:"rate_limit_window_seconds"`
 }
 
 func Load() (*Config, error) {
@@ -51,6 +54,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("translation_language", "")
 	viper.SetDefault("cache_enabled", true)
 	viper.SetDefault("cache_ttl_days", 7)
+	viper.SetDefault("rate_limit_enabled", true)
+	viper.SetDefault("rate_limit_requests", 60)      // 60 requests
+	viper.SetDefault("rate_limit_window_seconds", 60) // per minute
 
 	// Try to read config
 	if err := viper.ReadInConfig(); err != nil {
@@ -99,6 +105,9 @@ func Save(cfg *Config) error {
 	viper.Set("translation_language", cfg.TranslationLanguage)
 	viper.Set("cache_enabled", cfg.CacheEnabled)
 	viper.Set("cache_ttl_days", cfg.CacheTTLDays)
+	viper.Set("rate_limit_enabled", cfg.RateLimitEnabled)
+	viper.Set("rate_limit_requests", cfg.RateLimitRequests)
+	viper.Set("rate_limit_window_seconds", cfg.RateLimitWindow)
 
 	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {
