@@ -10,7 +10,7 @@ func TestNew(t *testing.T) {
 		name     string
 		apiKey   string
 		model    string
-		mode     string
+		style    string
 		language string
 		wantErr  bool
 	}{
@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 			name:     "valid corrector",
 			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
-			mode:     "casual",
+			style:    "casual",
 			language: "english",
 			wantErr:  false,
 		},
@@ -26,7 +26,7 @@ func TestNew(t *testing.T) {
 			name:     "empty API key",
 			apiKey:   "",
 			model:    "gpt-4o",
-			mode:     "casual",
+			style:    "casual",
 			language: "english",
 			wantErr:  true,
 		},
@@ -34,7 +34,7 @@ func TestNew(t *testing.T) {
 			name:     "invalid API key (too short)",
 			apiKey:   "sk-short",
 			model:    "gpt-4o",
-			mode:     "casual",
+			style:    "casual",
 			language: "english",
 			wantErr:  true,
 		},
@@ -42,7 +42,7 @@ func TestNew(t *testing.T) {
 			name:     "invalid API key (wrong prefix)",
 			apiKey:   "invalid-key-123456789012345678901234567890",
 			model:    "gpt-4o",
-			mode:     "casual",
+			style:    "casual",
 			language: "english",
 			wantErr:  true,
 		},
@@ -50,7 +50,7 @@ func TestNew(t *testing.T) {
 			name:     "different model",
 			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-3.5-turbo",
-			mode:     "formal",
+			style:    "formal",
 			language: "english",
 			wantErr:  false,
 		},
@@ -58,7 +58,7 @@ func TestNew(t *testing.T) {
 			name:     "different mode",
 			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
-			mode:     "academic",
+			style:    "academic",
 			language: "english",
 			wantErr:  false,
 		},
@@ -66,7 +66,7 @@ func TestNew(t *testing.T) {
 			name:     "empty language defaults to english",
 			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
-			mode:     "casual",
+			style:    "casual",
 			language: "",
 			wantErr:  false,
 		},
@@ -74,7 +74,7 @@ func TestNew(t *testing.T) {
 			name:     "non-english language",
 			apiKey:   "sk-test1234567890123456789012345678901234567890",
 			model:    "gpt-4o",
-			mode:     "casual",
+			style:    "casual",
 			language: "spanish",
 			wantErr:  false,
 		},
@@ -82,7 +82,7 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New(tt.apiKey, tt.model, tt.mode, tt.language)
+			corrector, err := New(tt.apiKey, tt.model, tt.style, tt.language)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -95,8 +95,8 @@ func TestNew(t *testing.T) {
 				if corrector.model != tt.model {
 					t.Errorf("New() model = %v, want %v", corrector.model, tt.model)
 				}
-				if corrector.mode != tt.mode {
-					t.Errorf("New() mode = %v, want %v", corrector.mode, tt.mode)
+				if corrector.style != tt.style {
+					t.Errorf("New() style = %v, want %v", corrector.style, tt.style)
 				}
 				expectedLang := tt.language
 				if expectedLang == "" {
@@ -120,72 +120,72 @@ func TestNew(t *testing.T) {
 func TestBuildPrompt(t *testing.T) {
 	tests := []struct {
 		name     string
-		mode     string
+		style    string
 		text     string
-		wantMode string // Expected mode used (may differ if invalid)
+		wantStyle string // Expected style used (may differ if invalid)
 		wantText string // Text that should be in prompt
 	}{
 		{
 			name:     "casual mode",
-			mode:     "casual",
+			style:    "casual",
 			text:     "Hello world",
 			wantMode: "casual",
 			wantText: "Hello world",
 		},
 		{
 			name:     "formal mode",
-			mode:     "formal",
+			style:    "formal",
 			text:     "Fix this text",
 			wantMode: "formal",
 			wantText: "Fix this text",
 		},
 		{
 			name:     "academic mode",
-			mode:     "academic",
+			style:    "academic",
 			text:     "Academic writing",
 			wantMode: "academic",
 			wantText: "Academic writing",
 		},
 		{
 			name:     "technical mode",
-			mode:     "technical",
+			style:    "technical",
 			text:     "Technical documentation",
 			wantMode: "technical",
 			wantText: "Technical documentation",
 		},
 		{
-			name:     "invalid mode defaults to casual",
-			mode:     "invalid-mode",
+			name:     "invalid style defaults to casual",
+			style:    "invalid-style",
 			text:     "Some text",
-			wantMode: "casual", // Should default to casual
+			wantStyle: "casual", // Should default to casual
 			wantText: "Some text",
 		},
 		{
-			name:     "empty mode defaults to casual",
-			mode:     "",
+			name:     "empty style defaults to casual",
+			style:    "",
 			text:     "Some text",
-			wantMode: "casual",
+			wantStyle: "casual",
 			wantText: "Some text",
 		},
 		{
 			name:     "text with newlines",
-			mode:     "casual",
+			style:    "casual",
 			text:     "Line 1\nLine 2\nLine 3",
-			wantMode: "casual",
+			wantStyle: "casual",
 			wantText: "Line 1\nLine 2\nLine 3",
 		},
 		{
 			name:     "empty text",
-			mode:     "casual",
+			style:    "casual",
 			text:     "",
-			wantMode: "casual",
+			wantStyle: "casual",
 			wantText: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", tt.mode, "english")
+			corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", tt.style, "english")
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -197,23 +197,23 @@ func TestBuildPrompt(t *testing.T) {
 				t.Errorf("buildPrompt() does not contain text %q. Got: %q", tt.wantText, prompt)
 			}
 
-			// Verify mode-specific instructions
-			switch tt.wantMode {
+			// Verify style-specific instructions
+			switch tt.wantStyle {
 			case "casual":
 				if !strings.Contains(strings.ToLower(prompt), "casual") {
-					t.Errorf("buildPrompt() should contain 'casual' for casual mode")
+					t.Errorf("buildPrompt() should contain 'casual' for casual style")
 				}
 			case "formal":
 				if !strings.Contains(strings.ToLower(prompt), "formal") {
-					t.Errorf("buildPrompt() should contain 'formal' for formal mode")
+					t.Errorf("buildPrompt() should contain 'formal' for formal style")
 				}
 			case "academic":
 				if !strings.Contains(strings.ToLower(prompt), "academic") {
-					t.Errorf("buildPrompt() should contain 'academic' for academic mode")
+					t.Errorf("buildPrompt() should contain 'academic' for academic style")
 				}
 			case "technical":
 				if !strings.Contains(strings.ToLower(prompt), "technical") {
-					t.Errorf("buildPrompt() should contain 'technical' for technical mode")
+					t.Errorf("buildPrompt() should contain 'technical' for technical style")
 				}
 			}
 
@@ -230,24 +230,24 @@ func TestBuildPrompt(t *testing.T) {
 	}
 }
 
-func TestBuildPromptModeSpecificity(t *testing.T) {
-	// Test that each mode produces different prompts
-	modes := []string{"casual", "formal", "academic", "technical"}
+func TestBuildPromptStyleSpecificity(t *testing.T) {
+	// Test that each style produces different prompts
+	styles := []string{"casual", "formal", "academic", "technical"}
 	prompts := make(map[string]string)
 
-	for _, mode := range modes {
-		corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", mode, "english")
+	for _, style := range styles {
+		corrector, err := New("sk-test1234567890123456789012345678901234567890", "gpt-4o", style, "english")
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
-		prompts[mode] = corrector.buildPrompt("test text")
+		prompts[style] = corrector.buildPrompt("test text")
 	}
 
 	// Verify all prompts are different
-	for i, mode1 := range modes {
-		for j, mode2 := range modes {
-			if i < j && prompts[mode1] == prompts[mode2] {
-				t.Errorf("buildPrompt() produces same prompt for %v and %v modes", mode1, mode2)
+	for i, style1 := range styles {
+		for j, style2 := range styles {
+			if i < j && prompts[style1] == prompts[style2] {
+				t.Errorf("buildPrompt() produces same prompt for %v and %v styles", style1, style2)
 			}
 		}
 	}

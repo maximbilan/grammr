@@ -23,7 +23,7 @@ type Config struct {
 	Model             string `mapstructure:"model"`
 	ShowDiff          bool   `mapstructure:"show_diff"`
 	AutoCopy          bool   `mapstructure:"auto_copy"`
-	Mode              string `mapstructure:"mode"`
+	Style             string `mapstructure:"style"`
 	Language          string `mapstructure:"language"`
 	TranslationLanguage string `mapstructure:"translation_language"`
 	CacheEnabled      bool   `mapstructure:"cache_enabled"`
@@ -48,7 +48,7 @@ func Load() (*Config, error) {
 	// Set defaults
 	viper.SetDefault("model", "gpt-4o")
 	viper.SetDefault("show_diff", true)
-	viper.SetDefault("mode", "casual")
+	viper.SetDefault("style", "casual")
 	viper.SetDefault("language", "english")
 	viper.SetDefault("translation_language", "")
 	viper.SetDefault("cache_enabled", true)
@@ -80,6 +80,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Backward compatibility: if style is empty but mode exists, use mode
+	if config.Style == "" {
+		if oldMode := viper.GetString("mode"); oldMode != "" {
+			config.Style = oldMode
+		}
+	}
+
 	return &config, nil
 }
 
@@ -99,7 +106,7 @@ func Save(cfg *Config) error {
 	viper.Set("model", cfg.Model)
 	viper.Set("show_diff", cfg.ShowDiff)
 	viper.Set("auto_copy", cfg.AutoCopy)
-	viper.Set("mode", cfg.Mode)
+	viper.Set("style", cfg.Style)
 	viper.Set("language", cfg.Language)
 	viper.Set("translation_language", cfg.TranslationLanguage)
 	viper.Set("cache_enabled", cfg.CacheEnabled)
@@ -149,6 +156,11 @@ func Set(key, value string) error {
 
 	// Try to read existing config (ignore error if file doesn't exist)
 	_ = viper.ReadInConfig()
+
+	// Backward compatibility: map "mode" to "style"
+	if key == "mode" {
+		key = "style"
+	}
 
 	viper.Set(key, value)
 

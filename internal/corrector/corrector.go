@@ -14,17 +14,17 @@ import (
 type Corrector struct {
 	client     *openai.Client
 	model      string
-	mode       string
+	style      string
 	language   string
 	rateLimiter *ratelimit.RateLimiter
 }
 
-func New(apiKey, model, mode, language string) (*Corrector, error) {
-	return NewWithRateLimit(apiKey, model, mode, language, nil)
+func New(apiKey, model, style, language string) (*Corrector, error) {
+	return NewWithRateLimit(apiKey, model, style, language, nil)
 }
 
 // NewWithRateLimit creates a new Corrector with an optional rate limiter
-func NewWithRateLimit(apiKey, model, mode, language string, rateLimiter *ratelimit.RateLimiter) (*Corrector, error) {
+func NewWithRateLimit(apiKey, model, style, language string, rateLimiter *ratelimit.RateLimiter) (*Corrector, error) {
 	if err := validation.ValidateAPIKey(apiKey); err != nil {
 		return nil, err
 	}
@@ -38,22 +38,22 @@ func NewWithRateLimit(apiKey, model, mode, language string, rateLimiter *ratelim
 		language = "english"
 	}
 
-	// Validate mode
-	validModes := map[string]bool{
+	// Validate style
+	validStyles := map[string]bool{
 		"casual":    true,
 		"formal":    true,
 		"academic":  true,
 		"technical": true,
 	}
-	if mode != "" && !validModes[mode] {
-		// Default to casual for invalid modes
-		mode = "casual"
+	if style != "" && !validStyles[style] {
+		// Default to casual for invalid styles
+		style = "casual"
 	}
 
 	return &Corrector{
 		client:      openai.NewClient(apiKey),
 		model:       model,
-		mode:        mode,
+		style:       style,
 		language:    language,
 		rateLimiter: rateLimiter,
 	}, nil
@@ -74,7 +74,7 @@ Only output the corrected text, nothing else.`,
 Only output the corrected text, nothing else.`,
 	}
 
-	prompt, ok := prompts[c.mode]
+	prompt, ok := prompts[c.style]
 	if !ok {
 		prompt = prompts["casual"]
 	}
