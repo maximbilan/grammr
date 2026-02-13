@@ -457,6 +457,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// switchMode changes the correction mode and saves it to config
+func (m Model) switchMode(modeName, displayName string) (tea.Model, tea.Cmd) {
+	m.config.Mode = modeName
+	rateLimiter := createRateLimiter(m.config)
+	var err error
+	m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, modeName, m.config.Language, rateLimiter)
+	if err != nil {
+		return m, func() tea.Msg { return errMsg{err: err} }
+	}
+	// Save mode to config file
+	if err := config.Save(m.config); err != nil {
+		// Log error but don't fail - mode is still changed in memory
+		m.status = fmt.Sprintf("Mode: %s (config save failed)", displayName)
+	} else {
+		m.status = fmt.Sprintf("Mode: %s", displayName)
+	}
+	return m, nil
+}
+
 func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "v", "V":
@@ -535,69 +554,13 @@ func (m Model) handleGlobalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "1":
-		m.config.Mode = "casual"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "casual", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		// Save mode to config file
-		if err := config.Save(m.config); err != nil {
-			// Log error but don't fail - mode is still changed in memory
-			m.status = "Mode: Casual (config save failed)"
-		} else {
-			m.status = "Mode: Casual"
-		}
-		return m, nil
+		return m.switchMode("casual", "Casual")
 	case "2":
-		m.config.Mode = "formal"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "formal", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		// Save mode to config file
-		if err := config.Save(m.config); err != nil {
-			// Log error but don't fail - mode is still changed in memory
-			m.status = "Mode: Formal (config save failed)"
-		} else {
-			m.status = "Mode: Formal"
-		}
-		return m, nil
+		return m.switchMode("formal", "Formal")
 	case "3":
-		m.config.Mode = "academic"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "academic", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		// Save mode to config file
-		if err := config.Save(m.config); err != nil {
-			// Log error but don't fail - mode is still changed in memory
-			m.status = "Mode: Academic (config save failed)"
-		} else {
-			m.status = "Mode: Academic"
-		}
-		return m, nil
+		return m.switchMode("academic", "Academic")
 	case "4":
-		m.config.Mode = "technical"
-		rateLimiter := createRateLimiter(m.config)
-		var err error
-		m.corrector, err = corrector.NewWithRateLimit(m.config.APIKey, m.config.Model, "technical", m.config.Language, rateLimiter)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err: err} }
-		}
-		// Save mode to config file
-		if err := config.Save(m.config); err != nil {
-			// Log error but don't fail - mode is still changed in memory
-			m.status = "Mode: Technical (config save failed)"
-		} else {
-			m.status = "Mode: Technical"
-		}
-		return m, nil
+		return m.switchMode("technical", "Technical")
 	}
 
 	return m, nil
