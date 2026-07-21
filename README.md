@@ -14,6 +14,26 @@
 - **Beautiful**: Colorful diffs, clean interface
 - **Private**: Runs locally, API calls only for corrections
 
+## Screenshots
+
+Copy, paste with `V`, and grammr shows the fix as a colored diff:
+
+![grammr correction view with a colored diff](docs/screenshots/main.png)
+
+Review changes one at a time with `A` — `Tab` to apply, `Space` to skip:
+
+![grammr review mode](docs/screenshots/review.png)
+
+Set a translation language and grammr corrects, then translates, in one pass:
+
+![grammr correction and translation](docs/screenshots/translation.png)
+
+Press `?` any time for the full keymap:
+
+![grammr keyboard shortcuts](docs/screenshots/help.png)
+
+> These are captured from grammr's real rendering output. See [`docs/screenshots`](docs/screenshots) to regenerate them.
+
 ## Install
 
 ### Homebrew (macOS)
